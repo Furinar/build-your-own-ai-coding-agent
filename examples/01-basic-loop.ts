@@ -3,6 +3,9 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
+// 使用的模型。通过 .env 里的 MODEL 变量覆盖，默认走 magpie 网关的模型。
+const MODEL = process.env.MODEL ?? "trae-internal/openrouter-3o";
+
 // 一个简单的工具，方便我们直观地看到循环的运作。
 // 模型可以调用它来“获取当前时间”。
 // 下一章我们会加入真正的工具，比如文件读取和搜索。
@@ -44,7 +47,7 @@ async function agentLoop(
 
     // 1. 带上完整的对话历史调用 API
     const response = await client.messages.create({
-      model: "trae-internal/openrouter-3o",
+      model: MODEL,
       max_tokens: 4096,
       tools,
       messages: conversationHistory,

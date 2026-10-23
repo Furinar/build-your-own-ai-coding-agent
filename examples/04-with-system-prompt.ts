@@ -7,6 +7,9 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
+// 使用的模型。通过 .env 里的 MODEL 变量覆盖，默认走 magpie 网关的模型。
+const MODEL = process.env.MODEL ?? "trae-internal/openrouter-3o";
+
 // --- 系统提示词 ---
 // 这就是塑造模型行为的东西。没有它，模型会乱猜文件路径、
 // 编辑它没读过的文件。有了它，模型会先搜索、先读取，
@@ -283,7 +286,7 @@ async function agentLoop(
     if (turns > maxTurns) return "[max turns reached]";
 
     const response = await client.messages.create({
-      model: "trae-internal/openrouter-3o",
+      model: MODEL,
       max_tokens: 4096,
       system: SYSTEM_PROMPT, // <-- 系统提示词塑造行为
       tools: apiTools,

@@ -12,6 +12,11 @@ import Turndown from "turndown";
 
 const client = new Anthropic();
 
+// 主循环用的模型；FAST_MODEL 给子任务（网页摘要）用，默认可以是更便宜的小模型。
+// 两者都可以通过 .env 覆盖。
+const MODEL = process.env.MODEL ?? "trae-internal/openrouter-3o";
+const FAST_MODEL = process.env.FAST_MODEL ?? MODEL;
+
 const SYSTEM_PROMPT = `你是一个编程助手。你可以读取、搜索和编辑本地文件。你还可以抓取网页来查阅文档或参考资料。
 
 # 如何工作
@@ -222,7 +227,7 @@ const tools: Tool[] = [
         // 用一个辅助模型提取相关内容
         console.log(`  [提取中] 对 ${markdown.length} 字符应用 prompt...`);
         const extraction = await client.messages.create({
-          model: "trae-internal/openrouter-3o",
+          model: FAST_MODEL,
           max_tokens: 2048,
           system: "你是一个内容提取器。给定一个网页和一个 prompt,只提取相关的信息。保持简洁、聚焦。如果页面不包含相关信息,就直接说明。",
           messages: [{
@@ -267,7 +272,7 @@ const tools: Tool[] = [
       try {
         // 另发一次带服务端网页搜索工具的 API 调用
         const response = await client.messages.create({
-          model: "trae-internal/openrouter-3o",
+          model: FAST_MODEL,
           max_tokens: 1024,
           system: "执行网络搜索并返回结果。",
           tools: [
@@ -375,7 +380,7 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
     if (turns > maxTurns) return "[max turns reached]";
 
     const stream = client.messages.stream({
-      model: "trae-internal/openrouter-3o",
+      model: MODEL,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: apiTools,

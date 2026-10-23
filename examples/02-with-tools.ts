@@ -7,6 +7,9 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
+// 使用的模型。通过 .env 里的 MODEL 变量覆盖，默认走 magpie 网关的模型。
+const MODEL = process.env.MODEL ?? "trae-internal/openrouter-3o";
+
 // --- 工具接口 ---
 // 每个工具都有名称、描述、用于校验输入的 Zod schema，
 // 以及一个实际执行工作的 call() 函数。
@@ -220,7 +223,7 @@ async function agentLoop(
     }
 
     const response = await client.messages.create({
-      model: "trae-internal/openrouter-3o",
+      model: MODEL,
       max_tokens: 4096,
       tools: apiTools,
       messages: conversationHistory,

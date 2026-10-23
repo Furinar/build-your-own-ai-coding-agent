@@ -12,6 +12,9 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
+// 使用的模型。通过 .env 里的 MODEL 变量覆盖，默认走 magpie 网关的模型。
+const MODEL = process.env.MODEL ?? "trae-internal/openrouter-3o";
+
 // --- 持久化路径 ---
 const AGENT_DIR = ".agent";
 const SESSION_FILE = path.join(AGENT_DIR, "session.jsonl");
@@ -267,7 +270,7 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
     if (turns > maxTurns) return "[max turns reached]";
 
     const stream = client.messages.stream({
-      model: "trae-internal/openrouter-3o",
+      model: MODEL,
       max_tokens: 4096,
       system: systemPrompt,
       tools: apiTools,
