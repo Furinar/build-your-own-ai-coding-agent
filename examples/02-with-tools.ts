@@ -7,9 +7,9 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-// --- Tool interface ---
-// Every tool has a name, description, Zod schema for input validation,
-// and a call() function that does the actual work.
+// --- 工具接口 ---
+// 每个工具都有名称、描述、用于校验输入的 Zod schema，
+// 以及一个实际执行工作的 call() 函数。
 
 interface Tool {
   name: string;
@@ -18,14 +18,14 @@ interface Tool {
   call(input: Record<string, unknown>): Promise<string>;
 }
 
-// --- Tool implementations ---
+// --- 工具实现 ---
 
 const readFileTool: Tool = {
   name: "read_file",
   description:
-    "Read the contents of a file. Returns the file content with line numbers.",
+    "读取一个文件的内容。返回带行号的文件内容。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to read"),
+    file_path: z.string().describe("要读取的文件路径"),
   }),
   async call(input) {
     try {
@@ -41,10 +41,10 @@ const readFileTool: Tool = {
 const writeFileTool: Tool = {
   name: "write_file",
   description:
-    "Write content to a file. Creates parent directories if needed. Overwrites existing files.",
+    "把内容写入一个文件。需要时会创建父目录。会覆盖已存在的文件。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to write"),
-    content: z.string().describe("The content to write"),
+    file_path: z.string().describe("要写入的文件路径"),
+    content: z.string().describe("要写入的内容"),
   }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -57,12 +57,12 @@ const writeFileTool: Tool = {
 const listFilesTool: Tool = {
   name: "list_files",
   description:
-    "List files in a directory recursively. Skips node_modules and hidden files.",
+    "递归列出一个目录下的文件。会跳过 node_modules 和隐藏文件。",
   inputSchema: z.object({
     directory: z
       .string()
       .optional()
-      .describe("Directory to list. Defaults to current directory."),
+      .describe("要列出的目录。默认为当前目录。"),
   }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -78,7 +78,7 @@ const listFilesTool: Tool = {
           else files.push(full);
         }
       } catch {
-        // Skip directories we cannot read
+        // 跳过无法读取的目录
       }
     }
 
@@ -90,13 +90,13 @@ const listFilesTool: Tool = {
 const searchFilesTool: Tool = {
   name: "search_files",
   description:
-    "Search for a regex pattern in files. Returns matching lines with file paths and line numbers.",
+    "在文件中搜索一个正则表达式。返回匹配的行，并附带文件路径和行号。",
   inputSchema: z.object({
-    pattern: z.string().describe("Regex pattern to search for"),
+    pattern: z.string().describe("要搜索的正则表达式"),
     directory: z
       .string()
       .optional()
-      .describe("Directory to search. Defaults to current directory."),
+      .describe("要搜索的目录。默认为当前目录。"),
   }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -122,12 +122,12 @@ const searchFilesTool: Tool = {
                 }
               });
             } catch {
-              // Skip binary files
+              // 跳过二进制文件
             }
           }
         }
       } catch {
-        // Skip directories we cannot read
+        // 跳过无法读取的目录
       }
     }
 
@@ -138,9 +138,9 @@ const searchFilesTool: Tool = {
 
 const runCommandTool: Tool = {
   name: "run_command",
-  description: "Run a shell command and return its output.",
+  description: "运行一个 shell 命令并返回其输出。",
   inputSchema: z.object({
-    command: z.string().describe("The shell command to run"),
+    command: z.string().describe("要运行的 shell 命令"),
   }),
   async call(input) {
     try {
@@ -156,7 +156,7 @@ const runCommandTool: Tool = {
   },
 };
 
-// --- All tools ---
+// --- 所有工具 ---
 const tools: Tool[] = [
   readFileTool,
   writeFileTool,
@@ -165,8 +165,8 @@ const tools: Tool[] = [
   runCommandTool,
 ];
 
-// Convert Zod schemas to the JSON Schema format the API expects.
-// This is a simplified conversion. In production, use a library like zod-to-json-schema.
+// 把 Zod schema 转换成 API 需要的 JSON Schema 格式。
+// 这是一个简化版转换。生产环境中请用 zod-to-json-schema 之类的库。
 function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   const shape = schema.shape;
   const properties: Record<string, unknown> = {};
@@ -176,7 +176,7 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
     const zodValue = value as z.ZodTypeAny;
     const isOptional = zodValue.isOptional();
 
-    // Extract the inner type if optional
+    // 如果是可选字段，提取其内部类型
     const innerType = isOptional
       ? (zodValue as z.ZodOptional<z.ZodString>)._def.innerType
       : zodValue;
@@ -198,7 +198,7 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   };
 }
 
-// --- The agentic loop (same as Chapter 1, now with real tools) ---
+// --- 智能体循环（和第 1 章一样，但现在用上了真正的工具）---
 
 async function agentLoop(
   conversationHistory: Anthropic.MessageParam[]
@@ -206,7 +206,7 @@ async function agentLoop(
   let turns = 0;
   const maxTurns = 20;
 
-  // Build the API tool definitions from our tools
+  // 根据我们的工具构建 API 的工具定义
   const apiTools: Anthropic.Tool[] = tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
@@ -220,7 +220,7 @@ async function agentLoop(
     }
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       tools: apiTools,
       messages: conversationHistory,
@@ -228,7 +228,7 @@ async function agentLoop(
 
     conversationHistory.push({ role: "assistant", content: response.content });
 
-    // Check for tool_use blocks in the content (not stop_reason)
+    // 检查内容中的 tool_use 块（而不是 stop_reason）
     const toolUseBlocks = response.content.filter(
       (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
     );
@@ -240,7 +240,7 @@ async function agentLoop(
       return textBlocks.map((b) => b.text).join("\n");
     }
 
-    // Execute each tool
+    // 逐个执行工具
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const toolUse of toolUseBlocks) {
@@ -257,7 +257,7 @@ async function agentLoop(
         continue;
       }
 
-      // Validate input with Zod
+      // 用 Zod 校验输入
       const parsed = tool.inputSchema.safeParse(toolUse.input);
       if (!parsed.success) {
         console.log(`  [tool] ${toolUse.name} (invalid input)`);
@@ -270,11 +270,11 @@ async function agentLoop(
         continue;
       }
 
-      // Log what the tool is doing
+      // 记录工具正在做什么
       const inputSummary = JSON.stringify(toolUse.input).slice(0, 80);
       console.log(`  [tool] ${toolUse.name}(${inputSummary})`);
 
-      // Execute
+      // 执行
       const result = await tool.call(parsed.data);
       const truncated =
         result.length > 200
@@ -289,7 +289,7 @@ async function agentLoop(
       });
     }
 
-    // Push results back into conversation
+    // 把结果推回对话中
     conversationHistory.push({ role: "user", content: toolResults });
   }
 }
@@ -303,10 +303,10 @@ async function main() {
     output: process.stdout,
   });
 
-  console.log("Agent with tools. Try:");
-  console.log('  "What files are in sample-project?"');
-  console.log('  "Read the Button component in sample-project"');
-  console.log('  "Search for className in sample-project"\n');
+  console.log("带工具的智能体。试试：");
+  console.log('  “sample-project 里有哪些文件？”');
+  console.log('  “读取 sample-project 中的 Button 组件”');
+  console.log('  “在 sample-project 中搜索 className”\n');
 
   const ask = () => {
     rl.question("> ", async (input) => {

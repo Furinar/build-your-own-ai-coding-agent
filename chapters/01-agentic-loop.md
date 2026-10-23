@@ -1,39 +1,39 @@
-# Chapter 1: The Agentic Loop
+# 第 1 章：智能体循环
 
-## The problem
+## 问题所在
 
-When you use a regular chatbot, you send a message, you get a response, and that is it. One turn. But coding tasks are never one turn. "Add a dark mode toggle" requires finding files, reading them, understanding the code, making edits, running tests, and maybe fixing what the tests caught.
+用普通聊天机器人时，你发一条消息，得到一条回复，就结束了——一个回合。但编程任务从来不是一个回合能搞定的。"加个暗色模式开关"需要找文件、读文件、理解代码、改代码、跑测试，可能还要修复测试揪出来的问题。
 
-How do you make an AI do all of that from a single prompt?
+那怎么让 AI 从一句提示词出发，把这一整套都做完呢？
 
-## What a real task looks like
+## 真实任务长什么样
 
-Let's say a user types: "Add a dark mode toggle to the settings page."
+假设用户输入："给设置页面加一个暗色模式开关。"
 
-Here is what an AI coding agent actually does:
+一个 AI 编程智能体实际会这么干：
 
 ```
-Turn 1:  [tool] search for settings-related files
-Turn 2:  [tool] read Settings.tsx
-Turn 3:  [tool] read the theme config file
-Turn 4:  [tool] search for existing dark mode code
-Turn 5:  [tool] edit the theme config to add dark colors
-Turn 6:  [tool] edit Settings.tsx to add a toggle switch
-Turn 7:  [tool] run the tests
-Turn 8:  [text] "Done. I added a dark mode toggle to..."
+回合 1:  [工具] 搜索和设置相关的文件
+回合 2:  [工具] 读取 Settings.tsx
+回合 3:  [工具] 读取主题配置文件
+回合 4:  [工具] 搜索已有的暗色模式代码
+回合 5:  [工具] 编辑主题配置，加上暗色
+回合 6:  [工具] 编辑 Settings.tsx，加个切换开关
+回合 7:  [工具] 跑测试
+回合 8:  [文本] "搞定。我给设置页加了一个暗色模式开关……"
 ```
 
-Eight turns. Seven of them are tool calls. Only the last one is actual text for the user. The model decided on its own what to search, what to read, what to edit, and when it was done.
+八个回合，其中七个是工具调用，只有最后一个才是真正给用户看的文字。搜什么、读什么、改什么、什么时候算完事，全是模型自己决定的。
 
-This is what "agentic" means. The model is not just answering a question. It is making decisions, taking actions, and repeating until the job is done.
+这就是"agentic（有能动性）"的含义。模型不只是在回答问题，它在做决策、采取行动，不断重复，直到任务完成。
 
-## What is a "tool"?
+## 什么是"工具"？
 
-Before we look at the loop, let's clarify what "tool" means here.
+在看循环之前，先说清楚这里的"工具"指什么。
 
-Most LLM APIs (Claude, GPT, Gemini, etc.) support a feature called "tool use" or "function calling." You can tell the model about functions it is allowed to use. "You have a function called `read_file` that takes a file path and returns the file contents." These functions are called **tools**.
+大多数 LLM API（Claude、GPT、Gemini 等）都支持一个叫"工具调用"或"函数调用"的功能。你可以告诉模型它能用哪些函数，比如"你有一个函数叫 `read_file`，接收一个文件路径，返回文件内容"。这些函数就叫**工具**。
 
-The model does not run the tools itself. It can only *ask* you to run them. When the model decides it needs to read a file, it responds with a special block called `tool_use`:
+模型自己并不会运行工具，它只能*请求*你去运行。当模型判断需要读文件时，它会回复一个特殊的块，叫 `tool_use`：
 
 ```json
 {
@@ -43,9 +43,9 @@ The model does not run the tools itself. It can only *ask* you to run them. When
 }
 ```
 
-This is the model saying: "I want to call `read_file` with this input. Please run it and tell me the result."
+这是模型在说："我想用这个输入调用 `read_file`，请你帮我运行一下，把结果告诉我。"
 
-Your code then executes the function, gets the result, and sends it back to the model as a `tool_result` block. What does "execute the function" look like? At its simplest, it is just a function:
+然后你的代码执行这个函数、拿到结果，再把结果作为一个 `tool_result` 块发回给模型。"执行这个函数"具体是什么样？说到底，就是一个函数：
 
 ```typescript
 function executeTool(name: string, input: Record<string, string>): string {
@@ -55,57 +55,57 @@ function executeTool(name: string, input: Record<string, string>): string {
   if (name === "list_files") {
     return fs.readdirSync(input.directory).join("\n");
   }
-  return "Unknown tool";
+  return "未知工具";
 }
 ```
 
-A tool is just a function. The model says "call `read_file` with this path", your code reads the file from disk, and you send the contents back. Nothing more. We will build a proper set of tools in Chapter 2, including how to organize them, validate inputs, and handle errors. For now, this is all you need to understand the loop below.
+工具就是一个函数。模型说"用这个路径调用 `read_file`"，你的代码从磁盘读文件，再把内容发回去。仅此而已。第 2 章我们会搭建一套像样的工具，包括怎么组织它们、校验输入、处理错误。眼下这些就够你看懂下面的循环了。
 
-## The loop
+## 循环
 
-The whole thing is a `while(true)` loop wrapped in a function. First, you set up the API client and define what tools the model can use:
+整个东西就是一个包在函数里的 `while(true)` 循环。首先，你初始化 API 客户端，并定义模型能用哪些工具：
 
 ```typescript
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic(); // reads ANTHROPIC_API_KEY from environment
+const client = new Anthropic(); // 从环境变量读取 ANTHROPIC_API_KEY
 
-// Tell the model what tools it has (Chapter 2 covers this in detail)
+// 告诉模型它有哪些工具（第 2 章会详细讲）
 const tools: Anthropic.Tool[] = [
   {
     name: "get_time",
-    description: "Get the current date and time",
+    description: "获取当前日期和时间",
     input_schema: { type: "object", properties: {}, required: [] },
   },
 ];
 ```
 
-Each tool has a `name`, a `description` (so the model knows what it does), and an `input_schema` that describes what arguments it accepts. The schema uses [JSON Schema](https://json-schema.org/) format. `properties` lists the arguments and their types, `required` lists which ones are mandatory. This `get_time` tool takes no arguments, so both are empty. A tool that reads a file would look like:
+每个工具都有一个 `name`、一个 `description`（让模型知道它是干什么的），以及一个描述它接收哪些参数的 `input_schema`。schema 用的是 [JSON Schema](https://json-schema.org/) 格式。`properties` 列出参数及其类型，`required` 列出哪些是必填的。这个 `get_time` 工具不接收任何参数，所以两个都是空的。一个读文件的工具会长这样：
 
 ```typescript
 {
   name: "read_file",
-  description: "Read a file from disk",
+  description: "从磁盘读取一个文件",
   input_schema: {
     type: "object",
     properties: {
-      file_path: { type: "string", description: "Path to the file" },
+      file_path: { type: "string", description: "文件路径" },
     },
     required: ["file_path"],
   },
 }
 ```
 
-The model reads these definitions and knows: "I can call `read_file` with a `file_path` string." We will build real tools in Chapter 2.
+模型读到这些定义，就知道："我可以用一个 `file_path` 字符串来调用 `read_file`。"第 2 章我们会搭建真正的工具。
 
-Then the agentic loop itself:
+然后是智能体循环本身：
 
 ```typescript
 async function agentLoop(
   conversationHistory: Anthropic.MessageParam[]
 ): Promise<string> {
   while (true) {
-    // 1. Send the conversation to the API
+    // 1. 把对话发给 API
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 4096,
@@ -113,23 +113,23 @@ async function agentLoop(
       messages: conversationHistory,
     });
 
-    // 2. Add the assistant's response to history
+    // 2. 把助手的回复加进历史
     conversationHistory.push({ role: "assistant", content: response.content });
 
-    // 3. Check if the model used any tools
+    // 3. 检查模型有没有用工具
     const toolUseBlocks = response.content.filter(
       (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
     );
 
     if (toolUseBlocks.length === 0) {
-      // No tools called. The model is done. Extract the text and return it.
+      // 没调用工具，模型干完了。提取文本返回。
       const textBlocks = response.content.filter(
         (block): block is Anthropic.TextBlock => block.type === "text"
       );
       return textBlocks.map((b) => b.text).join("\n");
     }
 
-    // 4. Execute each tool and collect results
+    // 4. 执行每个工具，收集结果
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const toolUse of toolUseBlocks) {
       const result = executeTool(toolUse.name, toolUse.input);
@@ -140,21 +140,21 @@ async function agentLoop(
       });
     }
 
-    // 5. Push tool results back into the conversation as a user message
+    // 5. 把工具结果作为一条 user 消息推回对话
     conversationHistory.push({ role: "user", content: toolResults });
 
-    // 6. Loop back to step 1
+    // 6. 回到第 1 步
   }
 }
 ```
 
-That is the entire architecture. The function takes the conversation history, runs the loop until the model stops calling tools, and returns the final text response. Everything else in this guide is adding features on top of this loop.
+整个架构就这些。这个函数接收对话历史，一直循环直到模型不再调用工具，然后返回最终的文本回复。本指南里其余的一切，都是在这个循环之上添加功能。
 
-## How it works, step by step
+## 一步一步看它怎么运转
 
-Let's trace through what happens when the user says "read the README file":
+我们跟着走一遍，看看用户说"读一下 README 文件"时发生了什么：
 
-**Step 1**: We send the conversation to the API. The messages array looks like:
+**第 1 步**：我们把对话发给 API。messages 数组长这样：
 
 ```json
 [
@@ -162,7 +162,7 @@ Let's trace through what happens when the user says "read the README file":
 ]
 ```
 
-**Step 2**: The API responds with a `tool_use` block:
+**第 2 步**：API 返回一个 `tool_use` 块：
 
 ```json
 {
@@ -178,9 +178,9 @@ Let's trace through what happens when the user says "read the README file":
 }
 ```
 
-**Step 3**: We see a `tool_use` block, so we do not break. We execute the tool (read the file) and get the contents back.
+**第 3 步**：我们看到一个 `tool_use` 块，所以不退出循环。我们执行工具（读文件），拿回内容。
 
-**Step 4**: We push the tool result back as a user message:
+**第 4 步**：我们把工具结果作为一条 user 消息推回去：
 
 ```json
 [
@@ -190,31 +190,31 @@ Let's trace through what happens when the user says "read the README file":
 ]
 ```
 
-**Step 5**: We loop back to step 1. The model now sees its own tool call AND the result. It has the file contents in front of it. It can now decide: do I need to call another tool, or can I respond with text?
+**第 5 步**：我们回到第 1 步。现在模型同时看到了自己的工具调用*和*结果，文件内容就摆在它面前。它现在可以决定：是要再调一个工具，还是可以用文字回复了？
 
-If it responds with just text (no `tool_use` blocks), the loop breaks. Done.
+如果它只回文字（没有 `tool_use` 块），循环退出，完事。
 
-If it calls another tool, we repeat the cycle.
+如果它又调了一个工具，我们就重复这个循环。
 
-## The flow
+## 流程
 
 ```mermaid
 flowchart TD
-    A[User sends prompt] --> B[Call LLM API]
-    B --> C{Response has tool_use blocks?}
-    C -->|Yes| D[Execute each tool]
-    D --> E[Push results to conversation history]
+    A[用户发送提示词] --> B[调用 LLM API]
+    B --> C{回复里有 tool_use 块吗?}
+    C -->|有| D[执行每个工具]
+    D --> E[把结果推进对话历史]
     E --> B
-    C -->|No| F[Return text response to user]
+    C -->|没有| F[把文本回复返回给用户]
 ```
 
-This is the entire agentic loop. Every AI coding agent works this way. The difference between a simple agent and a production one is everything we add around this loop in the following chapters.
+这就是完整的智能体循环。每个 AI 编程智能体都是这么工作的。简单智能体和生产级智能体的区别，全在接下来几章里我们围绕这个循环添加的东西。
 
-## Check for tool_use blocks, not stop_reason
+## 检查 tool_use 块，而不是 stop_reason
 
-You might think you should check `response.stop_reason === "tool_use"` to know if tools were called. Do not rely on that. The `stop_reason` field is not always reliable. Sometimes it says `end_turn` even when the response contains tool calls.
+你可能觉得应该靠 `response.stop_reason === "tool_use"` 来判断有没有调用工具。别依赖这个。`stop_reason` 这个字段并不总是可靠。有时候回复里明明有工具调用，它却说 `end_turn`。
 
-Instead, check the actual content:
+应该去检查实际的内容：
 
 ```typescript
 const toolUseBlocks = response.content.filter(
@@ -222,45 +222,45 @@ const toolUseBlocks = response.content.filter(
 );
 
 if (toolUseBlocks.length === 0) {
-  break; // No tools, we are done
+  break; // 没有工具，我们干完了
 }
 ```
 
-This is what production agents do. Look at what the model actually returned, not what the metadata says.
+生产级智能体就是这么做的。看模型实际返回了什么，而不是看元数据怎么说。
 
-## Exit conditions
+## 退出条件
 
-The loop does not run forever. There are several reasons to stop:
+循环不会永远跑下去。有好几种停下来的理由：
 
-| Condition | What happens |
+| 条件 | 会发生什么 |
 |---|---|
-| **No tool calls** | The model responded with just text. It decided it is done. This is the normal exit. |
-| **Max turns reached** | Safety limit. If the model has been looping for 50 turns, something is probably wrong. Break out. |
-| **User cancelled** | The user hit Ctrl+C or an abort signal was triggered. |
-| **Context too long** | The conversation history got too big for the model's context window. We will handle this in Chapter 6. |
-| **API error** | The model returned an error (rate limit, server error, etc.). |
+| **没有工具调用** | 模型只回了文字，它判断自己干完了。这是正常退出。 |
+| **达到最大回合数** | 安全上限。如果模型已经循环了 50 个回合，多半是出问题了，跳出来。 |
+| **用户取消** | 用户按了 Ctrl+C，或者触发了中止信号。 |
+| **上下文太长** | 对话历史太大，超出了模型的上下文窗口。第 6 章会处理这个。 |
+| **API 报错** | 模型返回了错误（限流、服务器错误等）。 |
 
-Production agents have even more exit conditions, but these five cover the important ones.
+生产级智能体还有更多退出条件，但这五个涵盖了最重要的几种。
 
-For now, we only implement the first two (no tool calls = done, max turns = safety stop). We will add the others as we go.
+眼下我们只实现前两个（没有工具调用 = 干完了，达到最大回合数 = 安全停止）。其余的随着推进再加。
 
-## The key insight
+## 关键洞见
 
-The word "agent" sounds like something complex. It is not. The model's output becomes its own input on the next turn. That is the whole trick. The loop does not make decisions. The model does. The loop just keeps asking "what now?" and the model keeps answering until it decides to stop.
+"智能体"这个词听起来好像很复杂，其实不是。模型这一回合的输出，变成下一回合它自己的输入。整个把戏就在这儿。循环不做决策，模型才做。循环只是不停地问"接下来呢？"，模型不停地回答，直到它决定停下来。
 
 ```
-model output --> tool results --> model input (next turn)
+模型输出 --> 工具结果 --> 模型输入（下一回合）
 ```
 
-The loop is dumb. The model is smart. Your job is to give the model tools (next chapter) and keep the loop running.
+循环是笨的，模型是聪明的。你的活儿就是给模型工具（下一章），然后让循环转起来。
 
-## What is still missing
+## 还缺什么
 
-Our loop has no tools. The model cannot read files, search code, or run commands. It can only respond with text. In the next chapter, we will give it eyes and hands.
+我们的循环没有任何工具。模型读不了文件、搜不了代码、跑不了命令，只能回文字。下一章，我们给它装上眼睛和手。
 
-## The REPL
+## REPL
 
-We have `agentLoop()` but we need a way for the user to type messages and see responses. The example uses a simple REPL (read-eval-print loop) with Node's `readline` module:
+我们有了 `agentLoop()`，但还需要一个途径让用户输入消息、看到回复。示例里用了一个简单的 REPL（读取-求值-打印循环），基于 Node 的 `readline` 模块：
 
 ```typescript
 import * as readline from "readline";
@@ -278,14 +278,14 @@ async function main() {
       const trimmed = input.trim();
       if (!trimmed) return ask();
 
-      // Add user message to history
+      // 把用户消息加进历史
       conversationHistory.push({ role: "user", content: trimmed });
 
-      // Run the agentic loop
+      // 运行智能体循环
       const response = await agentLoop(conversationHistory);
       console.log(`\n${response}\n`);
 
-      // Ask for the next message
+      // 询问下一条消息
       ask();
     });
   };
@@ -296,14 +296,14 @@ async function main() {
 main();
 ```
 
-The user types a message, it gets added to the conversation history, the agentic loop runs (possibly calling tools multiple times), and the final text response is printed. Then the REPL asks for the next message. The conversation history carries forward, so follow-up messages have the full context.
+用户输入一条消息，它被加进对话历史，智能体循环开始运行（可能多次调用工具），最后打印出文本回复。然后 REPL 又来问下一条消息。对话历史会一直往下传，所以后续消息都带着完整的上下文。
 
-This REPL is the outer shell around the agentic loop. Every example in this guide uses the same pattern.
+这个 REPL 就是包在智能体循环外面的一层壳。本指南里的每个示例都用这同一套模式。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:01
 ```
 
-The example uses a `get_time` tool so you can see the cycle in action. Try "what time is it?" and watch the model call the tool and use the result.
+示例用了一个 `get_time` 工具，好让你看到这个循环实际跑起来的样子。试试"现在几点了？"，看模型调用工具并用上结果。

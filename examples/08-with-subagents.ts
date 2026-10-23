@@ -1,6 +1,6 @@
-// This example focuses on: subagents (Chapter 8).
-// Includes: tools (Ch2), edit (Ch3), system prompt (Ch4), context (Ch5), compression (Ch6).
-// Omits: permissions (Ch7) to keep the code focused on the subagent concept.
+// 本示例聚焦于: 子代理(第 8 章)。
+// 包含: 工具(第 2 章)、编辑(第 3 章)、系统提示词(第 4 章)、上下文(第 5 章)、压缩(第 6 章)。
+// 省略: 权限(第 7 章),让代码专注于子代理这个概念。
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -11,11 +11,11 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You are a coding assistant. Use list_files and search_files to find files before editing. Always read before editing. Be concise.
+const SYSTEM_PROMPT = `你是一个编程助手。编辑前先用 list_files 和 search_files 找到相关文件。编辑前永远先读文件。保持简洁。
 
-You have a "subagent" tool. Use it to delegate exploration or research tasks that would produce a lot of output. The subagent works in its own context so its tool results do not clutter yours.`;
+你有一个 "subagent" 工具。用它把会产生大量输出的探索或调研任务委派出去。子代理在自己的上下文里工作,它的工具结果不会弄乱你的上下文。`;
 
-// --- Types ---
+// --- 类型 ---
 interface Tool {
   name: string;
   description: string;
@@ -54,12 +54,12 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- Tools (without subagent, which is added separately) ---
+// --- 工具(不含子代理,子代理单独添加) ---
 
 const baseTools: Tool[] = [
   {
     name: "read_file",
-    description: "Read a file with line numbers.",
+    description: "读取文件,带行号。",
     inputSchema: z.object({ file_path: z.string() }),
     async call(input) {
       const filePath = input.file_path as string;
@@ -72,7 +72,7 @@ const baseTools: Tool[] = [
   },
   {
     name: "edit_file",
-    description: "Edit a file by replacing old_string with new_string. Read first.",
+    description: "编辑文件,用 new_string 替换 old_string。请先读取文件。",
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() }),
     async call(input) {
       const { file_path, old_string, new_string, replace_all } = input as any;
@@ -90,7 +90,7 @@ const baseTools: Tool[] = [
   },
   {
     name: "write_file",
-    description: "Create or overwrite a file.",
+    description: "创建或覆盖文件。",
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     async call(input) {
       const filePath = input.file_path as string;
@@ -101,7 +101,7 @@ const baseTools: Tool[] = [
   },
   {
     name: "list_files",
-    description: "List files recursively.",
+    description: "递归列出文件。",
     inputSchema: z.object({ directory: z.string().optional() }),
     async call(input) {
       const dir = (input.directory as string) || ".";
@@ -121,7 +121,7 @@ const baseTools: Tool[] = [
   },
   {
     name: "search_files",
-    description: "Search for a regex pattern in files.",
+    description: "在文件中搜索正则表达式模式。",
     inputSchema: z.object({ pattern: z.string(), directory: z.string().optional() }),
     async call(input) {
       const dir = (input.directory as string) || ".";
@@ -148,7 +148,7 @@ const baseTools: Tool[] = [
   },
   {
     name: "run_command",
-    description: "Run a shell command.",
+    description: "执行一条 shell 命令。",
     inputSchema: z.object({ command: z.string() }),
     async call(input) {
       try {
@@ -158,7 +158,7 @@ const baseTools: Tool[] = [
   },
 ];
 
-// --- The agentic loop ---
+// --- 智能体循环 ---
 async function agentLoop(
   messages: Anthropic.MessageParam[],
   options: { maxTurns?: number; depth?: number } = {}
@@ -168,19 +168,19 @@ async function agentLoop(
   const indent = "  ".repeat(depth);
   let turns = 0;
 
-  // Subagent tool: calls agentLoop recursively with isolated messages.
-  // Only available at the top level (subagents cannot spawn sub-subagents).
+  // 子代理工具: 用隔离的消息递归调用 agentLoop。
+  // 只在顶层可用(子代理不能再派生子子代理)。
   const subagentTool: Tool = {
     name: "subagent",
     description:
-      "Delegate a task to a subagent with its own isolated context. " +
-      "Use for exploration or research that would produce lots of output. " +
-      "The subagent returns a text summary.",
+      "把任务委派给一个拥有独立上下文的子代理。" +
+      "用于会产生大量输出的探索或调研。" +
+      "子代理返回一段文本摘要。",
     inputSchema: z.object({
-      prompt: z.string().describe("The task for the subagent"),
+      prompt: z.string().describe("交给子代理的任务"),
     }),
     async call(input) {
-      console.log(`${indent}  [subagent] Starting...`);
+      console.log(`${indent}  [子代理] 启动中...`);
       const subMessages: Anthropic.MessageParam[] = [
         { role: "user", content: input.prompt as string },
       ];
@@ -188,12 +188,12 @@ async function agentLoop(
         maxTurns: 10,
         depth: depth + 1,
       });
-      console.log(`${indent}  [subagent] Done (${result.length} chars)`);
+      console.log(`${indent}  [子代理] 完成 (${result.length} 字符)`);
       return result;
     },
   };
 
-  // Top-level agents get the subagent tool. Subagents do not (no recursion).
+  // 顶层智能体拥有子代理工具。子代理没有(避免递归)。
   const allTools = depth === 0 ? [...baseTools, subagentTool] : baseTools;
 
   const apiTools: Anthropic.Tool[] = allTools.map((tool) => ({
@@ -207,7 +207,7 @@ async function agentLoop(
     if (turns > maxTurns) return "[max turns reached]";
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: apiTools,
@@ -241,9 +241,9 @@ async function agentLoop(
         continue;
       }
 
-      console.log(`${indent}  [tool] ${tool.name}(${JSON.stringify(toolUse.input).slice(0, 100)})`);
+      console.log(`${indent}  [工具] ${tool.name}(${JSON.stringify(toolUse.input).slice(0, 100)})`);
       const result = await tool.call(parsed.data);
-      console.log(`${indent}  [result] ${result.slice(0, 150)}${result.length > 150 ? "..." : ""}`);
+      console.log(`${indent}  [结果] ${result.slice(0, 150)}${result.length > 150 ? "..." : ""}`);
       toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: result });
     }
 
@@ -256,8 +256,8 @@ async function main() {
   const conversationHistory: Anthropic.MessageParam[] = [];
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log("Agent with subagents. The model can delegate tasks to isolated sub-loops.");
-  console.log('Try: "Use a subagent to explore all files in sample-project and describe each one"\n');
+  console.log("带子代理的智能体。模型可以把任务委派给隔离的子循环。");
+  console.log('试试: "用一个子代理探索 sample-project 里的所有文件并逐个描述"\n');
 
   const ask = () => {
     rl.question("> ", async (input) => {

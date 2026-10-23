@@ -1,7 +1,7 @@
-// This example focuses on: persistence (Chapter 12).
-// Includes: tools (Ch2), edit (Ch3), system prompt (Ch4), streaming (Ch9).
-// Omits: permissions (Ch7), subagents (Ch8), compression (Ch6), concurrency (Ch10),
-//        web access (Ch11) to keep the code focused on persistence.
+// 本示例聚焦于: 持久化(第 12 章)。
+// 包含: 工具(第 2 章)、编辑(第 3 章)、系统提示词(第 4 章)、流式(第 9 章)。
+// 省略: 权限(第 7 章)、子代理(第 8 章)、压缩(第 6 章)、并发(第 10 章)、
+//        网络访问(第 11 章),让代码专注于持久化。
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -12,13 +12,13 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-// --- Persistence paths ---
+// --- 持久化路径 ---
 const AGENT_DIR = ".agent";
 const SESSION_FILE = path.join(AGENT_DIR, "session.jsonl");
 const MEMORY_FILE = path.join(AGENT_DIR, "memory.md");
 const PROJECT_INSTRUCTIONS_FILE = "AGENT.md";
 
-// --- Load project instructions and memory ---
+// --- 加载项目说明和记忆 ---
 function loadProjectInstructions(): string | null {
   try {
     if (fs.existsSync(PROJECT_INSTRUCTIONS_FILE)) {
@@ -37,32 +37,32 @@ function loadMemory(): string | null {
   return null;
 }
 
-// Build the system prompt with optional project instructions and memory
+// 构建系统提示词,可选地附带项目说明和记忆
 function buildSystemPrompt(): string {
-  const base = `You are a coding assistant. You can read, search, and edit local files, fetch web pages, and save notes to memory.
+  const base = `你是一个编程助手。你可以读取、搜索和编辑本地文件,抓取网页,并把笔记保存到记忆中。
 
-# How to work
-- Use list_files and search_files to find relevant files before editing.
-- Always read a file before editing it.
-- Use save_memory to remember important things about the user or project.
-- Be concise.`;
+# 如何工作
+- 编辑前先用 list_files 和 search_files 找到相关文件。
+- 编辑前永远先读文件。
+- 用 save_memory 记住关于用户或项目的重要信息。
+- 保持简洁。`;
 
   const parts = [base];
 
   const instructions = loadProjectInstructions();
   if (instructions) {
-    parts.push(`# Project Instructions (from AGENT.md)\n${instructions}`);
+    parts.push(`# 项目说明(来自 AGENT.md)\n${instructions}`);
   }
 
   const memory = loadMemory();
   if (memory) {
-    parts.push(`# Memory (from previous sessions)\n${memory}`);
+    parts.push(`# 记忆(来自以往会话)\n${memory}`);
   }
 
   return parts.join("\n\n");
 }
 
-// --- Session save/load ---
+// --- 会话保存/加载 ---
 function saveMessage(message: Anthropic.MessageParam): void {
   fs.mkdirSync(AGENT_DIR, { recursive: true });
   fs.appendFileSync(SESSION_FILE, JSON.stringify(message) + "\n");
@@ -83,7 +83,7 @@ function clearSession(): void {
   if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE);
 }
 
-// --- Types ---
+// --- 类型 ---
 interface Tool {
   name: string;
   description: string;
@@ -121,11 +121,11 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- Tools ---
+// --- 工具 ---
 const tools: Tool[] = [
   {
     name: "read_file",
-    description: "Read a file with line numbers.",
+    description: "读取文件,带行号。",
     inputSchema: z.object({ file_path: z.string() }),
     isConcurrencySafe: true,
     async call(input) {
@@ -139,7 +139,7 @@ const tools: Tool[] = [
   },
   {
     name: "edit_file",
-    description: "Edit a file by replacing old_string with new_string. Read first.",
+    description: "编辑文件,用 new_string 替换 old_string。请先读取文件。",
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() }),
     isConcurrencySafe: false,
     async call(input) {
@@ -158,7 +158,7 @@ const tools: Tool[] = [
   },
   {
     name: "write_file",
-    description: "Create or overwrite a file.",
+    description: "创建或覆盖文件。",
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     isConcurrencySafe: false,
     async call(input) {
@@ -170,7 +170,7 @@ const tools: Tool[] = [
   },
   {
     name: "list_files",
-    description: "List files recursively.",
+    description: "递归列出文件。",
     inputSchema: z.object({ directory: z.string().optional() }),
     isConcurrencySafe: true,
     async call(input) {
@@ -191,7 +191,7 @@ const tools: Tool[] = [
   },
   {
     name: "search_files",
-    description: "Search for a regex pattern in files.",
+    description: "在文件中搜索正则表达式模式。",
     inputSchema: z.object({ pattern: z.string(), directory: z.string().optional() }),
     isConcurrencySafe: true,
     async call(input) {
@@ -219,7 +219,7 @@ const tools: Tool[] = [
   },
   {
     name: "run_command",
-    description: "Run a shell command.",
+    description: "执行一条 shell 命令。",
     inputSchema: z.object({ command: z.string() }),
     isConcurrencySafe: false,
     async call(input) {
@@ -229,14 +229,14 @@ const tools: Tool[] = [
     },
   },
 
-  // --- Memory tool (new in this chapter) ---
+  // --- 记忆工具(本章新增) ---
   {
     name: "save_memory",
     description:
-      "Save a note to memory that persists across sessions. " +
-      "Use for user preferences, project decisions, or important context.",
+      "把一条笔记保存到跨会话持久化的记忆中。" +
+      "用于用户偏好、项目决策或重要上下文。",
     inputSchema: z.object({
-      content: z.string().describe("The note to save"),
+      content: z.string().describe("要保存的笔记"),
     }),
     isConcurrencySafe: false,
     async call(input) {
@@ -255,7 +255,7 @@ const apiTools: Anthropic.Tool[] = tools.map((t) => ({
   input_schema: zodToJsonSchema(t.inputSchema) as Anthropic.Tool["input_schema"],
 }));
 
-// --- Streaming agentic loop ---
+// --- 流式智能体循环 ---
 
 async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
   let turns = 0;
@@ -267,7 +267,7 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
     if (turns > maxTurns) return "[max turns reached]";
 
     const stream = client.messages.stream({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       system: systemPrompt,
       tools: apiTools,
@@ -317,7 +317,7 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
       }
     }
 
-    // Save assistant message
+    // 保存 assistant 消息
     const assistantMsg: Anthropic.MessageParam = { role: "assistant", content: contentBlocks };
     messages.push(assistantMsg);
     saveMessage(assistantMsg);
@@ -328,7 +328,7 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
       return contentBlocks.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
     }
 
-    // Execute tools
+    // 执行工具
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const toolUse of toolBlocks) {
       const tool = tools.find(t => t.name === toolUse.name);
@@ -341,17 +341,17 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
         toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: `Invalid: ${parsed.error.message}`, is_error: true });
         continue;
       }
-      console.log(`  [tool] ${toolUse.name}(${JSON.stringify(toolUse.input).slice(0, 80)})`);
+      console.log(`  [工具] ${toolUse.name}(${JSON.stringify(toolUse.input).slice(0, 80)})`);
       try {
         const result = await tool.call(parsed.data);
-        console.log(`  [result] ${result.slice(0, 150)}${result.length > 150 ? "..." : ""}`);
+        console.log(`  [结果] ${result.slice(0, 150)}${result.length > 150 ? "..." : ""}`);
         toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: result });
       } catch (e: any) {
         toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: `Error: ${e.message}`, is_error: true });
       }
     }
 
-    // Save tool results
+    // 保存工具结果
     const toolResultMsg: Anthropic.MessageParam = { role: "user", content: toolResults };
     messages.push(toolResultMsg);
     saveMessage(toolResultMsg);
@@ -363,43 +363,43 @@ async function main() {
   const conversationHistory: Anthropic.MessageParam[] = [];
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  // Check for project instructions
+  // 检查项目说明
   const instructions = loadProjectInstructions();
   if (instructions) {
-    console.log("Loaded project instructions from AGENT.md");
+    console.log("已从 AGENT.md 加载项目说明");
   }
 
-  // Check for memory
+  // 检查记忆
   const memory = loadMemory();
   if (memory) {
-    console.log("Loaded memory from previous sessions");
+    console.log("已从之前的会话加载记忆");
   }
 
-  // Check for existing session
+  // 检查已有会话
   const existingSession = loadSession();
   if (existingSession.length > 0) {
-    console.log(`Previous session found (${existingSession.length} messages). Type /resume to load it.`);
+    console.log(`发现之前的会话(${existingSession.length} 条消息)。输入 /resume 加载它。`);
   }
 
-  console.log("\nAgent with persistence. Commands:");
-  console.log("  /resume  - Load previous session");
-  console.log("  /new     - Start fresh (deletes saved session)");
-  console.log("  /memory  - Show saved memory");
-  console.log('  Try: "Remember that I prefer dark themes"\n');
+  console.log("\n带持久化的智能体。命令:");
+  console.log("  /resume  - 加载之前的会话");
+  console.log("  /new     - 开始新会话(删除已保存的会话)");
+  console.log("  /memory  - 显示已保存的记忆");
+  console.log('  试试: "记住我偏好深色主题"\n');
 
   const ask = () => {
     rl.question("> ", async (input) => {
       const trimmed = input.trim();
       if (!trimmed) return ask();
 
-      // Handle commands
+      // 处理命令
       if (trimmed === "/resume") {
         const loaded = loadSession();
         if (loaded.length === 0) {
-          console.log("No previous session found.\n");
+          console.log("未找到之前的会话。\n");
         } else {
           conversationHistory.push(...loaded);
-          console.log(`Loaded ${loaded.length} messages from previous session.\n`);
+          console.log(`已从之前的会话加载 ${loaded.length} 条消息。\n`);
         }
         return ask();
       }
@@ -407,21 +407,21 @@ async function main() {
       if (trimmed === "/new") {
         clearSession();
         conversationHistory.length = 0;
-        console.log("Started new session.\n");
+        console.log("已开始新会话。\n");
         return ask();
       }
 
       if (trimmed === "/memory") {
         const mem = loadMemory();
         if (mem) {
-          console.log(`Memory:\n${mem}\n`);
+          console.log(`记忆:\n${mem}\n`);
         } else {
-          console.log("No memory saved yet.\n");
+          console.log("还没有保存任何记忆。\n");
         }
         return ask();
       }
 
-      // Save user message
+      // 保存用户消息
       const userMsg: Anthropic.MessageParam = { role: "user", content: trimmed };
       conversationHistory.push(userMsg);
       saveMessage(userMsg);

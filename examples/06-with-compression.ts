@@ -7,9 +7,9 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You are a coding assistant. Use list_files and search_files to find files before editing. Always read a file before editing it. Be concise.`;
+const SYSTEM_PROMPT = `你是一个编程助手。在编辑之前，用 list_files 和 search_files 找到文件。编辑文件之前一定要先读取它。保持简洁。`;
 
-// --- Tool interface ---
+// --- 工具接口 ---
 interface Tool {
   name: string;
   description: string;
@@ -27,8 +27,8 @@ function findActualString(fileContent: string, searchString: string): string | n
   return null;
 }
 
-// --- Tools ---
-const MAX_RESULT_CHARS = 10_000; // Layer 1: cap individual tool results
+// --- 工具 ---
+const MAX_RESULT_CHARS = 10_000; // 第 1 层：限制单个工具结果的大小
 
 function truncateResult(result: string): string {
   if (result.length <= MAX_RESULT_CHARS) return result;
@@ -38,7 +38,7 @@ function truncateResult(result: string): string {
 
 const readFileTool: Tool = {
   name: "read_file",
-  description: "Read a file with line numbers. Always read before editing.",
+  description: "读取一个文件（带行号）。编辑之前一定要先读取。",
   inputSchema: z.object({ file_path: z.string() }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -55,7 +55,7 @@ const readFileTool: Tool = {
 
 const editFileTool: Tool = {
   name: "edit_file",
-  description: "Edit a file by replacing old_string with new_string. Must be unique match. Read first.",
+  description: "通过把 old_string 替换成 new_string 来编辑文件。必须是唯一匹配。先读取再编辑。",
   inputSchema: z.object({
     file_path: z.string(), old_string: z.string(),
     new_string: z.string(), replace_all: z.boolean().optional(),
@@ -81,7 +81,7 @@ const editFileTool: Tool = {
 
 const writeFileTool: Tool = {
   name: "write_file",
-  description: "Create or overwrite a file.",
+  description: "创建或覆盖一个文件。",
   inputSchema: z.object({ file_path: z.string(), content: z.string() }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -93,7 +93,7 @@ const writeFileTool: Tool = {
 
 const listFilesTool: Tool = {
   name: "list_files",
-  description: "List files recursively.",
+  description: "递归列出文件。",
   inputSchema: z.object({ directory: z.string().optional() }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -114,7 +114,7 @@ const listFilesTool: Tool = {
 
 const searchFilesTool: Tool = {
   name: "search_files",
-  description: "Search for a regex pattern in files.",
+  description: "在文件中搜索一个正则表达式。",
   inputSchema: z.object({ pattern: z.string(), directory: z.string().optional() }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -142,7 +142,7 @@ const searchFilesTool: Tool = {
 
 const runCommandTool: Tool = {
   name: "run_command",
-  description: "Run a shell command.",
+  description: "运行一个 shell 命令。",
   inputSchema: z.object({ command: z.string() }),
   async call(input) {
     try {
@@ -171,7 +171,7 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- Token estimation ---
+// --- token 估算 ---
 function estimateTokens(messages: Anthropic.MessageParam[]): number {
   let chars = 0;
   for (const msg of messages) {
@@ -187,7 +187,7 @@ function estimateTokens(messages: Anthropic.MessageParam[]): number {
   return Math.ceil(chars / 4);
 }
 
-// --- Layer 2: Clear old tool results ---
+// --- 第 2 层：清理旧的工具结果 ---
 const KEEP_RECENT_RESULTS = 6;
 
 function clearOldResults(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
@@ -212,10 +212,10 @@ function clearOldResults(messages: Anthropic.MessageParam[]): Anthropic.MessageP
   });
 }
 
-// --- Layer 3: Autocompact (LLM summarization) ---
-// Using a low threshold for demo purposes so you can see it trigger.
-// In production, this would be ~80% of the model's context window.
-const COMPACT_THRESHOLD_TOKENS = 8_000; // Low for demo. Production: ~160,000
+// --- 第 3 层：自动压缩（LLM 摘要）---
+// 为了演示效果，这里用了一个很低的阈值，好让你能看到它触发。
+// 生产环境中，这个值大约是模型上下文窗口的 80%。
+const COMPACT_THRESHOLD_TOKENS = 8_000; // 演示用的低值。生产环境：约 160,000
 
 async function autoCompact(
   messages: Anthropic.MessageParam[],
@@ -225,15 +225,15 @@ async function autoCompact(
     return { messages, wasCompacted: false };
   }
 
-  console.log("  [compact] Summarizing conversation to free up context...");
+  console.log("  [compact] 正在摘要对话以释放上下文...");
 
   const summaryResponse = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "trae-internal/openrouter-3o",
     max_tokens: 1024,
     system:
-      "Summarize this conversation between a user and a coding assistant. " +
-      "Preserve: file paths, code changes made, current task, and user preferences. " +
-      "Be concise but do not lose important details.",
+      "请对这段用户与编程助手之间的对话进行摘要。" +
+      "需要保留：文件路径、已做的代码改动、当前任务，以及用户偏好。" +
+      "尽量简洁，但不要丢失重要细节。",
     messages,
   });
 
@@ -242,18 +242,18 @@ async function autoCompact(
     .map((b) => b.text)
     .join("\n");
 
-  // Keep the last few messages intact
+  // 保留最后几条消息不动
   const keepRecent = 4;
   const recentMessages = messages.slice(-keepRecent);
 
   const compacted: Anthropic.MessageParam[] = [
     {
       role: "user",
-      content: `[Conversation summary]\n${summaryText}\n\n[Continuing from here.]`,
+      content: `[对话摘要]\n${summaryText}\n\n[从这里继续。]`,
     },
     {
       role: "assistant",
-      content: "Understood. I have the context from our previous conversation.",
+      content: "明白了。我已经掌握了之前对话中的上下文。",
     },
     ...recentMessages,
   ];
@@ -264,23 +264,23 @@ async function autoCompact(
   return { messages: compacted, wasCompacted: true };
 }
 
-// --- Full compression pipeline ---
+// --- 完整的压缩流水线 ---
 async function compressMessages(
   messages: Anthropic.MessageParam[]
 ): Promise<Anthropic.MessageParam[]> {
-  // Layer 1: Truncation already applied when results were created
+  // 第 1 层：结果创建时就已经做过截断
 
-  // Layer 2: Clear old tool results
+  // 第 2 层：清理旧的工具结果
   let compressed = clearOldResults(messages);
 
-  // Layer 3: Autocompact if still too large
+  // 第 3 层：如果仍然太大，就自动压缩
   const tokenEstimate = estimateTokens(compressed);
   const { messages: compacted, wasCompacted } = await autoCompact(compressed, tokenEstimate);
 
   return compacted;
 }
 
-// --- The agentic loop (with compression) ---
+// --- 智能体循环（带压缩）---
 async function agentLoop(
   conversationHistory: Anthropic.MessageParam[]
 ): Promise<string> {
@@ -297,13 +297,13 @@ async function agentLoop(
     turns++;
     if (turns > maxTurns) return "[max turns reached]";
 
-    // Run the compression pipeline before each API call
+    // 每次 API 调用前先运行压缩流水线
     const compressed = await compressMessages(conversationHistory);
     const tokenEstimate = estimateTokens(compressed);
     console.log(`  [context] ~${tokenEstimate} tokens in ${compressed.length} messages`);
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: apiTools,
@@ -350,9 +350,9 @@ async function main() {
   const conversationHistory: Anthropic.MessageParam[] = [];
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log("Agent with context compression. Watch [context] and [compact] logs.");
-  console.log(`Compact threshold: ${COMPACT_THRESHOLD_TOKENS} tokens (low for demo).`);
-  console.log("Read several files to trigger compression.\n");
+  console.log("带上下文压缩的智能体。观察 [context] 和 [compact] 日志。");
+  console.log(`压缩阈值：${COMPACT_THRESHOLD_TOKENS} tokens（演示用的低值）。`);
+  console.log("读取多个文件即可触发压缩。\n");
 
   const ask = () => {
     rl.question("> ", async (input) => {

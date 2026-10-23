@@ -1,51 +1,51 @@
-# Chapter 2: Tools
+# 第 2 章：工具
 
-## The problem
+## 问题所在
 
-Our agent from Chapter 1 has a brain but no body. It can think and talk, but it cannot see your files, search your code, or run commands. Without tools, it is just a chatbot.
+第 1 章里的智能体有脑子，但没有身体。它能思考、能说话，却看不到你的文件、搜不了你的代码、跑不了命令。没有工具，它就只是个聊天机器人。
 
-Tools are how the model interacts with the real world. Each tool is a function that the model can call. "Read this file." "Search for this pattern." "Run this command." The model picks which tool to use, what arguments to pass, and we execute it.
+工具是模型与现实世界打交道的方式。每个工具都是模型能调用的一个函数。"读这个文件。""搜这个模式。""跑这个命令。"模型挑用哪个工具、传什么参数，由我们来执行。
 
-## Walkthrough: "What is in the README?"
+## 走一遍："README 里写了什么？"
 
-The user types: "What is in the README?"
+用户输入："README 里写了什么？"
 
-Without tools, the model can only guess. With a `read_file` tool, here is what happens:
+没有工具，模型只能靠猜。有了 `read_file` 工具，过程是这样的：
 
 ```
-Turn 1:
-  Model thinks: "I need to read the file to answer this."
-  Model calls:  read_file({ file_path: "README.md" })
-  We execute:   fs.readFileSync("README.md", "utf-8")
-  We return:    "# My Project\nA simple React app..."
+回合 1:
+  模型心想: "我得读一下文件才能回答。"
+  模型调用:  read_file({ file_path: "README.md" })
+  我们执行:  fs.readFileSync("README.md", "utf-8")
+  我们返回:  "# My Project\nA simple React app..."
 
-Turn 2:
-  Model sees:   Its own tool call + the file contents
-  Model says:   "The README contains a project description for..."
-  No tools called. Loop exits.
+回合 2:
+  模型看到:  自己的工具调用 + 文件内容
+  模型说:    "README 里是一段项目描述……"
+  没有调用工具。循环退出。
 ```
 
-Two turns. One tool call. The model decided to read the file, got the contents, and answered the question. We did not tell it to use the read tool. It figured that out on its own.
+两个回合，一次工具调用。模型决定去读文件、拿到内容、回答了问题。我们没让它用读取工具，是它自己琢磨出来的。
 
-## The tool interface
+## 工具的接口
 
-Every tool needs two things:
+每个工具都需要两样东西：
 
-1. **A definition** that tells the model what the tool does (name, description, and what input it accepts)
-2. **An implementation** that actually does the work
+1. **一个定义**，告诉模型这个工具是干什么的（名字、描述，以及它接收什么输入）
+2. **一个实现**，真正把活儿干了
 
-The definition is what the model sees. It uses JSON Schema to describe the input format. Here is what a `read_file` tool definition looks like when sent to the API:
+定义就是模型看到的东西。它用 JSON Schema 来描述输入格式。一个 `read_file` 工具的定义发给 API 时长这样：
 
 ```json
 {
   "name": "read_file",
-  "description": "Read the contents of a file.",
+  "description": "读取一个文件的内容。",
   "input_schema": {
     "type": "object",
     "properties": {
       "file_path": {
         "type": "string",
-        "description": "The path to the file to read"
+        "description": "要读取的文件路径"
       }
     },
     "required": ["file_path"]
@@ -53,9 +53,9 @@ The definition is what the model sees. It uses JSON Schema to describe the input
 }
 ```
 
-The model reads this and knows: "I can call `read_file` with a `file_path` string." That is all the model needs.
+模型读到这个就知道："我可以用一个 `file_path` 字符串来调用 `read_file`。"模型需要的就这些。
 
-On our side, we need to organize our tools and validate the input the model sends (it can make mistakes). We use a simple interface:
+在我们这一侧，我们需要组织好工具，并校验模型发来的输入（它会犯错）。我们用一个简单的接口：
 
 ```typescript
 interface Tool {
@@ -66,87 +66,87 @@ interface Tool {
 }
 ```
 
-The `inputSchema` here uses [Zod](https://zod.dev/), a TypeScript validation library. We use it for two reasons: it validates the model's input at runtime (catching bad arguments before they cause errors), and we can convert it to the JSON Schema format the API expects. You could use plain JSON Schema instead, but Zod makes validation easier.
+这里的 `inputSchema` 用了 [Zod](https://zod.dev/)，一个 TypeScript 校验库。我们用它有两个理由：它能在运行时校验模型的输入（在坏参数引发错误之前就抓住），而且我们能把它转成 API 需要的 JSON Schema 格式。你也可以直接用纯 JSON Schema，但 Zod 让校验更省事。
 
-When the model calls a tool, we validate the input with Zod first. If it is wrong, we send an error back instead of crashing.
+模型调用工具时，我们先用 Zod 校验输入。如果不对，就把一个错误发回去，而不是直接崩掉。
 
-## The essential tools
+## 必备的几个工具
 
-You only need a few tools to cover most coding tasks:
+覆盖大多数编程任务，你只需要几个工具：
 
-| Tool | What it does | Example |
+| 工具 | 作用 | 举例 |
 |---|---|---|
-| **read_file** | Read a file from disk | Read "src/App.tsx" |
-| **write_file** | Create or overwrite a file | Create "src/utils.ts" |
-| **edit_file** | Replace a specific string in a file | Change "blue" to "red" |
-| **run_command** | Execute a shell command | Run "npm test" |
-| **list_files** | Find files by pattern | Find all "*.tsx" files |
-| **search_files** | Search file contents with regex | Find "useState" in all files |
+| **read_file** | 从磁盘读取文件 | 读 "src/App.tsx" |
+| **write_file** | 创建或覆盖文件 | 创建 "src/utils.ts" |
+| **edit_file** | 替换文件里某个特定字符串 | 把 "blue" 改成 "red" |
+| **run_command** | 执行 shell 命令 | 跑 "npm test" |
+| **list_files** | 按模式查找文件 | 找所有 "*.tsx" 文件 |
+| **search_files** | 用正则搜索文件内容 | 在所有文件里找 "useState" |
 
-With these six tools, an agent can do almost everything a developer does. The edit tool is special enough to get its own chapter (Chapter 3). For now, we will build the other five.
+有这六个工具，一个智能体几乎能干开发者干的所有事。编辑工具足够特别，值得单独一章（第 3 章）。眼下我们先把其余五个搭出来。
 
-## Building the tools
+## 搭建工具
 
 ### read_file
 
-The simplest and most used tool. The model calls it constantly.
+最简单、用得最多的工具。模型会不停地调它。
 
 ```typescript
 const readFileTool: Tool = {
   name: "read_file",
-  description: "Read the contents of a file. Returns the file content with line numbers.",
+  description: "读取一个文件的内容。返回带行号的文件内容。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to read"),
+    file_path: z.string().describe("要读取的文件路径"),
   }),
   async call(input) {
     const content = fs.readFileSync(input.file_path as string, "utf-8");
     const lines = content.split("\n");
-    // Add line numbers so the model can reference specific lines
+    // 加上行号，方便模型之后引用具体某一行
     return lines.map((line, i) => `${i + 1}\t${line}`).join("\n");
   },
 };
 ```
 
-We add line numbers to the output. This helps the model reference specific lines when it wants to make edits later. It is a small thing that makes a big difference.
+我们给输出加了行号。这能帮模型在之后想做编辑时引用具体的行。是件小事，但差别很大。
 
 ### run_command
 
-Runs a shell command and returns the output. This is powerful and dangerous, which is why Chapter 7 (Permissions) exists.
+运行一个 shell 命令并返回输出。这个工具强大又危险，正因如此才有了第 7 章（权限）。
 
 ```typescript
 const runCommandTool: Tool = {
   name: "run_command",
-  description: "Run a shell command and return its output.",
+  description: "运行一个 shell 命令并返回其输出。",
   inputSchema: z.object({
-    command: z.string().describe("The shell command to run"),
+    command: z.string().describe("要运行的 shell 命令"),
   }),
   async call(input) {
     try {
       const output = execSync(input.command as string, {
         encoding: "utf-8",
-        timeout: 30_000,   // 30 second timeout
-        maxBuffer: 1024 * 1024,  // 1MB max output
+        timeout: 30_000,   // 30 秒超时
+        maxBuffer: 1024 * 1024,  // 最多 1MB 输出
       });
       return output;
     } catch (err: any) {
-      return `Error (exit code ${err.status}): ${err.stderr || err.message}`;
+      return `错误（退出码 ${err.status}）: ${err.stderr || err.message}`;
     }
   },
 };
 ```
 
-Notice the timeout and max buffer. Without these, a command like `yes` (which prints "y" forever) would hang your agent. Always put limits on shell commands.
+注意那个超时和最大缓冲区。没有它们，像 `yes` 这种（会永远打印"y"）的命令会把你的智能体卡死。shell 命令一定要加上限制。
 
 ### list_files
 
-Finds files in a directory. The model uses this to explore the codebase before reading specific files.
+列出某个目录里的文件。模型用它在读具体文件之前先摸清代码库。
 
 ```typescript
 const listFilesTool: Tool = {
   name: "list_files",
-  description: "List files in a directory recursively. Skips node_modules and hidden files.",
+  description: "递归列出一个目录里的文件。跳过 node_modules 和隐藏文件。",
   inputSchema: z.object({
-    directory: z.string().optional().describe("Directory to list. Defaults to current directory."),
+    directory: z.string().optional().describe("要列出的目录。默认为当前目录。"),
   }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -162,24 +162,24 @@ const listFilesTool: Tool = {
     }
 
     walk(dir);
-    return files.join("\n") || "(empty directory)";
+    return files.join("\n") || "(空目录)";
   },
 };
 ```
 
-We skip `node_modules` and hidden files. Without this filter, the model would drown in thousands of irrelevant files.
+我们跳过了 `node_modules` 和隐藏文件。不加这个过滤，模型会被成千上万个无关文件淹没。
 
 ### search_files
 
-Searches file contents with a regex pattern. Like `grep` but returns results the model can use.
+用正则模式搜索文件内容。像 `grep`，但返回的是模型能用的结果。
 
 ```typescript
 const searchFilesTool: Tool = {
   name: "search_files",
-  description: "Search for a pattern in files. Returns matching lines with file paths and line numbers.",
+  description: "在文件里搜索某个模式。返回匹配的行，带文件路径和行号。",
   inputSchema: z.object({
-    pattern: z.string().describe("Regex pattern to search for"),
-    directory: z.string().optional().describe("Directory to search. Defaults to current directory."),
+    pattern: z.string().describe("要搜索的正则模式"),
+    directory: z.string().optional().describe("要搜索的目录。默认为当前目录。"),
   }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -201,44 +201,44 @@ const searchFilesTool: Tool = {
               }
             });
           } catch {
-            // Skip files we cannot read (binary files, etc.)
+            // 跳过读不了的文件（二进制文件等）
           }
         }
       }
     }
 
     search(dir);
-    return results.slice(0, 50).join("\n") || "No matches found.";
+    return results.slice(0, 50).join("\n") || "没有找到匹配项。";
   },
 };
 ```
 
-We limit results to 50 lines. Without a limit, a common pattern like `import` could return thousands of matches and eat up the model's context window.
+我们把结果限制在 50 行。不加限制，像 `import` 这种常见模式可能返回成千上万个匹配，把模型的上下文窗口吃光。
 
 ### write_file
 
-Creates a new file or overwrites an existing one. For edits to existing files, we will use the edit tool (Chapter 3). This tool is for creating new files.
+创建一个新文件，或覆盖一个已有文件。对已有文件的编辑，我们会用编辑工具（第 3 章）。这个工具是用来创建新文件的。
 
 ```typescript
 const writeFileTool: Tool = {
   name: "write_file",
-  description: "Write content to a file. Creates the file if it does not exist. Overwrites if it does.",
+  description: "把内容写入一个文件。文件不存在就创建，存在就覆盖。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to write"),
-    content: z.string().describe("The content to write"),
+    file_path: z.string().describe("要写入的文件路径"),
+    content: z.string().describe("要写入的内容"),
   }),
   async call(input) {
     const filePath = input.file_path as string;
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, input.content as string);
-    return `File written: ${filePath}`;
+    return `文件已写入: ${filePath}`;
   },
 };
 ```
 
-## Wiring tools into the loop
+## 把工具接入循环
 
-Now we connect the tools to our agentic loop from Chapter 1. First, collect all tools into an array:
+现在把工具接进第 1 章的智能体循环。首先，把所有工具收进一个数组：
 
 ```typescript
 const tools: Tool[] = [
@@ -250,9 +250,9 @@ const tools: Tool[] = [
 ];
 ```
 
-Then two things change:
+然后有两处要改：
 
-**1. Register tools with the API.** We convert our Zod schemas to JSON Schema and pass them in the `tools` parameter:
+**1. 把工具注册给 API。**我们把 Zod schema 转成 JSON Schema，通过 `tools` 参数传进去：
 
 ```typescript
 const apiTools = tools.map(tool => ({
@@ -269,7 +269,7 @@ const response = await client.messages.create({
 });
 ```
 
-**2. Find and execute the right tool.** When the model returns a `tool_use` block, we look up the tool by name, validate the input, and call it:
+**2. 找到并执行对应的工具。**模型返回一个 `tool_use` 块时，我们按名字查到工具、校验输入、调用它：
 
 ```typescript
 for (const toolUse of toolUseBlocks) {
@@ -278,25 +278,25 @@ for (const toolUse of toolUseBlocks) {
     toolResults.push({
       type: "tool_result",
       tool_use_id: toolUse.id,
-      content: `Unknown tool: ${toolUse.name}`,
+      content: `未知工具: ${toolUse.name}`,
       is_error: true,
     });
     continue;
   }
 
-  // Validate the input
+  // 校验输入
   const parsed = tool.inputSchema.safeParse(toolUse.input);
   if (!parsed.success) {
     toolResults.push({
       type: "tool_result",
       tool_use_id: toolUse.id,
-      content: `Invalid input: ${parsed.error.message}`,
+      content: `无效输入: ${parsed.error.message}`,
       is_error: true,
     });
     continue;
   }
 
-  // Execute the tool
+  // 执行工具
   const result = await tool.call(parsed.data);
   toolResults.push({
     type: "tool_result",
@@ -306,30 +306,30 @@ for (const toolUse of toolUseBlocks) {
 }
 ```
 
-Notice the `is_error: true` flag. When a tool call fails (unknown tool, invalid input, runtime error), we still return a result. We just mark it as an error. The model sees the error and can try again or take a different approach. Never crash. Always return something.
+注意那个 `is_error: true` 标记。当一次工具调用失败时（未知工具、无效输入、运行时错误），我们仍然返回一个结果，只是把它标记为错误。模型看到错误，可以重试，也可以换个思路。永远别崩溃，永远返回点什么。
 
-## The flow
+## 流程
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant A as Agent
+    participant U as 用户
+    participant A as 智能体
     participant API as LLM API
-    participant T as Tool
+    participant T as 工具
 
-    U->>A: "What files are in src/?"
-    A->>API: messages + tool definitions
+    U->>A: "src/ 里有哪些文件？"
+    A->>API: messages + 工具定义
     API->>A: tool_use: list_files({ directory: "src/" })
     A->>T: list_files("src/")
     T->>A: "src/App.tsx\nsrc/components/Button.tsx\n..."
     A->>API: messages + tool_result
-    API->>A: text: "The src/ directory contains..."
-    A->>U: "The src/ directory contains..."
+    API->>A: text: "src/ 目录里包含……"
+    A->>U: "src/ 目录里包含……"
 ```
 
-## What happens in a real session
+## 真实会话里会发生什么
 
-Here is what a multi-tool session looks like when the user asks "what does the Button component do?":
+用户问"Button 组件是干什么的？"时，一个多工具会话长这样：
 
 ```
 > what does the Button component do?
@@ -346,23 +346,23 @@ Here is what a multi-tool session looks like when the user asks "what does the B
            4  }
            ...
 
-The Button component is a reusable button that accepts a label
-and an onClick handler...
+Button 组件是一个可复用的按钮，接收一个 label
+和一个 onClick 处理函数……
 ```
 
-The model searched for files, found the Button component, read it, and explained it. Three turns, two tool calls, one text response. We never told it which file to read. It figured that out from the file listing.
+模型搜文件、找到了 Button 组件、读了它、解释了它。三个回合，两次工具调用，一次文本回复。我们从没告诉它读哪个文件，它从文件列表里自己琢磨出来的。
 
-## What is still missing
+## 还缺什么
 
-The model can read files but it cannot edit them. In the next chapter, we will build the edit tool. And the way it edits files is probably not what you expect.
+模型能读文件，但还不能编辑它们。下一章，我们来搭建编辑工具。而它编辑文件的方式，多半出乎你意料。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:02
 ```
 
-Try prompts like:
+试试这些提示词：
 - "What files are in the sample project?"
 - "Read the Button component"
 - "Search for className in the sample project"

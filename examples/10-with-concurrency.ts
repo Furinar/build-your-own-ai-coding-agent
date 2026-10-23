@@ -1,6 +1,6 @@
-// This example focuses on: concurrent tool execution (Chapter 10).
-// Includes: tools (Ch2), edit (Ch3), system prompt (Ch4), streaming (Ch9).
-// Omits: permissions (Ch7), subagents (Ch8), compression (Ch6) to keep the code focused.
+// 本示例聚焦于: 并发工具执行(第 10 章)。
+// 包含: 工具(第 2 章)、编辑(第 3 章)、系统提示词(第 4 章)、流式(第 9 章)。
+// 省略: 权限(第 7 章)、子代理(第 8 章)、压缩(第 6 章),让代码保持聚焦。
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -11,16 +11,16 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You are a coding assistant. Use list_files and search_files to find files before editing. Always read before editing. Be concise.
+const SYSTEM_PROMPT = `你是一个编程助手。编辑前先用 list_files 和 search_files 找到相关文件。编辑前永远先读文件。保持简洁。
 
-When you need to read multiple files, call all the read_file tools at once in a single response. This lets them run in parallel.`;
+当你需要读取多个文件时,在一次响应里同时调用所有的 read_file 工具。这样它们就能并行执行。`;
 
-// --- Types ---
+// --- 类型 ---
 interface Tool {
   name: string;
   description: string;
   inputSchema: z.ZodObject<any>;
-  isConcurrencySafe: boolean; // New: can this tool run in parallel with others?
+  isConcurrencySafe: boolean; // 新增: 该工具能否与其他工具并行运行?
   call(input: Record<string, unknown>): Promise<string>;
 }
 
@@ -52,12 +52,12 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- Tools (with concurrency flag) ---
+// --- 工具(带并发标记) ---
 const tools: Tool[] = [
   {
-    name: "read_file", description: "Read a file with line numbers.",
+    name: "read_file", description: "读取文件,带行号。",
     inputSchema: z.object({ file_path: z.string() }),
-    isConcurrencySafe: true, // Reading is safe to parallelize
+    isConcurrencySafe: true, // 读取可以安全并行
     async call(input) {
       const fp = input.file_path as string;
       try {
@@ -68,9 +68,9 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "edit_file", description: "Edit a file by replacing old_string with new_string.",
+    name: "edit_file", description: "编辑文件,用 new_string 替换 old_string。",
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() }),
-    isConcurrencySafe: false, // Editing is NOT safe to parallelize
+    isConcurrencySafe: false, // 编辑不能安全并行
     async call(input) {
       const { file_path: fp, old_string: os, new_string: ns, replace_all: ra } = input as any;
       if (os === ns) return "Error: identical.";
@@ -86,7 +86,7 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "write_file", description: "Create or overwrite a file.",
+    name: "write_file", description: "创建或覆盖文件。",
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     isConcurrencySafe: false,
     async call(input) {
@@ -97,7 +97,7 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "list_files", description: "List files recursively.",
+    name: "list_files", description: "递归列出文件。",
     inputSchema: z.object({ directory: z.string().optional() }),
     isConcurrencySafe: true,
     async call(input) {
@@ -117,7 +117,7 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "search_files", description: "Search for a regex pattern in files.",
+    name: "search_files", description: "在文件中搜索正则表达式模式。",
     inputSchema: z.object({ pattern: z.string(), directory: z.string().optional() }),
     isConcurrencySafe: true,
     async call(input) {
@@ -144,9 +144,9 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "run_command", description: "Run a shell command.",
+    name: "run_command", description: "执行一条 shell 命令。",
     inputSchema: z.object({ command: z.string() }),
-    isConcurrencySafe: false, // Commands can change state
+    isConcurrencySafe: false, // 命令可能改变状态
     async call(input) {
       try {
         return truncateResult(execSync(input.command as string, { encoding: "utf-8", timeout: 30_000, maxBuffer: 1024 * 1024 }) || "(no output)");
@@ -160,9 +160,9 @@ const apiTools: Anthropic.Tool[] = tools.map((t) => ({
   input_schema: zodToJsonSchema(t.inputSchema) as Anthropic.Tool["input_schema"],
 }));
 
-// --- Batch partitioning ---
-// Groups consecutive concurrent-safe tools into parallel batches.
-// Non-safe tools each become their own serial batch.
+// --- 批次划分 ---
+// 把连续的并发安全工具归入并行批次。
+// 非安全工具各自成为一个串行批次。
 
 interface ToolCall {
   block: Anthropic.ToolUseBlock;
@@ -199,7 +199,7 @@ function partitionIntoBatches(toolCalls: ToolCall[]): Batch[] {
   return batches;
 }
 
-// --- Execute a single tool call ---
+// --- 执行单个工具调用 ---
 async function executeToolCall(call: ToolCall): Promise<Anthropic.ToolResultBlockParam> {
   try {
     const result = await call.tool.call(call.input);
@@ -209,34 +209,34 @@ async function executeToolCall(call: ToolCall): Promise<Anthropic.ToolResultBloc
   }
 }
 
-// --- Execute batches with concurrency ---
+// --- 并发执行各批次 ---
 async function executeBatches(batches: Batch[]): Promise<Anthropic.ToolResultBlockParam[]> {
   const allResults: Anthropic.ToolResultBlockParam[] = [];
 
   for (const batch of batches) {
     if (batch.concurrent && batch.calls.length > 1) {
-      // Run all tools in this batch in parallel
-      console.log(`  [batch] Executing ${batch.calls.length} tools concurrently`);
+      // 并行运行该批次里的所有工具
+      console.log(`  [批次] 并发执行 ${batch.calls.length} 个工具`);
       for (const call of batch.calls) {
-        console.log(`  [tool] ${call.tool.name}(${JSON.stringify(call.block.input).slice(0, 80)})`);
+        console.log(`  [工具] ${call.tool.name}(${JSON.stringify(call.block.input).slice(0, 80)})`);
       }
 
       const results = await Promise.all(batch.calls.map(executeToolCall));
 
       for (let i = 0; i < results.length; i++) {
         const content = typeof results[i].content === "string" ? results[i].content as string : "";
-        console.log(`  [result] ${batch.calls[i].tool.name}: ${content.slice(0, 100)}${content.length > 100 ? "..." : ""}`);
+        console.log(`  [结果] ${batch.calls[i].tool.name}: ${content.slice(0, 100)}${content.length > 100 ? "..." : ""}`);
       }
-      console.log(`  [batch] All ${batch.calls.length} completed`);
+      console.log(`  [批次] 全部 ${batch.calls.length} 个已完成`);
 
       allResults.push(...results);
     } else {
-      // Run tools one at a time
+      // 逐个运行工具
       for (const call of batch.calls) {
-        console.log(`  [tool] ${call.tool.name}(${JSON.stringify(call.block.input).slice(0, 80)})`);
+        console.log(`  [工具] ${call.tool.name}(${JSON.stringify(call.block.input).slice(0, 80)})`);
         const result = await executeToolCall(call);
         const content = typeof result.content === "string" ? result.content as string : "";
-        console.log(`  [result] ${content.slice(0, 100)}${content.length > 100 ? "..." : ""}`);
+        console.log(`  [结果] ${content.slice(0, 100)}${content.length > 100 ? "..." : ""}`);
         allResults.push(result);
       }
     }
@@ -245,7 +245,7 @@ async function executeBatches(batches: Batch[]): Promise<Anthropic.ToolResultBlo
   return allResults;
 }
 
-// --- Streaming agentic loop with concurrent tool execution ---
+// --- 带并发工具执行的流式智能体循环 ---
 
 async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
   let turns = 0;
@@ -256,14 +256,14 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
     if (turns > maxTurns) return "[max turns reached]";
 
     const stream = client.messages.stream({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: apiTools,
       messages,
     });
 
-    // Accumulate content blocks
+    // 累积内容块
     const contentBlocks: any[] = [];
     let currentBlockType: string | null = null;
     let currentToolInput = "";
@@ -315,19 +315,19 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
       return contentBlocks.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
     }
 
-    // Prepare tool calls with their tool definitions
+    // 准备工具调用及其工具定义
     const toolCalls: ToolCall[] = [];
     for (const block of toolBlocks) {
       const tool = tools.find((t) => t.name === block.name);
       if (!tool) {
-        toolCalls.push({ block, tool: tools[0], input: {} }); // Will error
+        toolCalls.push({ block, tool: tools[0], input: {} }); // 将会报错
         continue;
       }
       const parsed = tool.inputSchema.safeParse(block.input);
       toolCalls.push({ block, tool, input: parsed.success ? parsed.data : {} });
     }
 
-    // Partition into batches and execute with concurrency
+    // 划分批次并带并发执行
     const batches = partitionIntoBatches(toolCalls);
     const toolResults = await executeBatches(batches);
 
@@ -340,9 +340,9 @@ async function main() {
   const conversationHistory: Anthropic.MessageParam[] = [];
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log("Agent with concurrent tool execution.");
-  console.log("Safe tools (read, search, list) run in parallel.");
-  console.log('Try: "Read all three files in sample-project/src/components and sample-project/src/App.tsx"\n');
+  console.log("带并发工具执行的智能体。");
+  console.log("安全工具(读取、搜索、列目录)并行运行。");
+  console.log('试试: "读取 sample-project/src/components 里的三个文件以及 sample-project/src/App.tsx"\n');
 
   const ask = () => {
     rl.question("> ", async (input) => {

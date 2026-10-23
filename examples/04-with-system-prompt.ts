@@ -7,37 +7,37 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-// --- The system prompt ---
-// This is what shapes the model's behavior. Without it, the model guesses
-// file paths and edits files it has not read. With it, the model searches
-// first, reads first, and works methodically.
+// --- 系统提示词 ---
+// 这就是塑造模型行为的东西。没有它，模型会乱猜文件路径、
+// 编辑它没读过的文件。有了它，模型会先搜索、先读取，
+// 并有条不紊地工作。
 
-const SYSTEM_PROMPT = `You are a coding assistant that helps users with software engineering tasks. You have access to tools for reading, searching, editing files, and running commands.
+const SYSTEM_PROMPT = `你是一个编程助手，帮助用户完成软件工程任务。你可以使用一些工具来读取、搜索、编辑文件以及运行命令。
 
-# How to work
+# 如何工作
 
-- When given a task, start by understanding the codebase. Use list_files and search_files to find relevant files before making changes.
-- Always read a file before editing it. Never guess what is in a file.
-- Use search_files to find code patterns, function definitions, and usage across the project.
-- When you find multiple candidate files, read them to understand which one is relevant to the task.
+- 接到任务时，先从理解代码库开始。在改动之前，用 list_files 和 search_files 找到相关文件。
+- 编辑文件之前一定要先读取它。绝不要凭空猜测文件里有什么。
+- 用 search_files 在整个项目中查找代码模式、函数定义和使用位置。
+- 当你找到多个候选文件时，读取它们，弄清楚哪一个和任务相关。
 
-# How to edit files
+# 如何编辑文件
 
-- Use the edit_file tool for modifications. Provide enough context in old_string to make the match unique.
-- For new files, use write_file.
-- After making edits, verify your changes make sense in context.
+- 修改时使用 edit_file 工具。在 old_string 中提供足够的上下文，以保证匹配是唯一的。
+- 对于新文件，使用 write_file。
+- 做完编辑后，确认你的改动在上下文中是合理的。
 
-# How to handle ambiguity
+# 如何处理歧义
 
-- If the user's request is ambiguous (e.g., "fix the button" when there are multiple buttons), ask which one they mean.
-- If you are unsure about the right approach, explain your plan before making changes.
+- 如果用户的请求有歧义（例如有多个按钮时却说“修一下这个按钮”），就反问他们指的是哪一个。
+- 如果你拿不准正确的做法，先说明你的计划，再动手改。
 
-# Communication
+# 沟通
 
-- Be concise. Show what you changed, not everything you considered.
-- When reporting edits, mention the file path and what was changed.`;
+- 保持简洁。展示你改了什么，而不是你考虑过的一切。
+- 汇报编辑时，说明文件路径以及改动了什么。`;
 
-// --- Tool interface ---
+// --- 工具接口 ---
 interface Tool {
   name: string;
   description: string;
@@ -45,7 +45,7 @@ interface Tool {
   call(input: Record<string, unknown>): Promise<string>;
 }
 
-// --- File read timestamps for staleness detection ---
+// --- 用于过期检测的文件读取时间戳 ---
 const readTimestamps = new Map<string, number>();
 
 function findActualString(
@@ -61,15 +61,15 @@ function findActualString(
   return null;
 }
 
-// --- Tools ---
-// Same implementations as Chapter 3, with hints added to descriptions.
+// --- 工具 ---
+// 实现和第 3 章相同，只是在描述中加入了一些提示。
 
 const readFileTool: Tool = {
   name: "read_file",
   description:
-    "Read a file's contents with line numbers. Always read a file before editing it.",
+    "读取一个文件的内容（带行号）。编辑文件之前一定要先读取它。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to read"),
+    file_path: z.string().describe("要读取的文件路径"),
   }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -87,15 +87,15 @@ const readFileTool: Tool = {
 const editFileTool: Tool = {
   name: "edit_file",
   description:
-    "Edit a file by replacing old_string with new_string. " +
-    "old_string must match exactly once (unless replace_all is true). " +
-    "Include enough surrounding context in old_string to make the match unique. " +
-    "You must read a file before editing it.",
+    "通过把 old_string 替换成 new_string 来编辑文件。" +
+    "old_string 必须恰好匹配一次（除非 replace_all 为 true）。" +
+    "在 old_string 中包含足够多的上下文，以保证匹配是唯一的。" +
+    "编辑文件之前必须先读取它。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to edit"),
-    old_string: z.string().describe("The exact text to find"),
-    new_string: z.string().describe("The replacement text"),
-    replace_all: z.boolean().optional().describe("Replace all occurrences"),
+    file_path: z.string().describe("要编辑的文件路径"),
+    old_string: z.string().describe("要查找的确切文本"),
+    new_string: z.string().describe("用来替换的文本"),
+    replace_all: z.boolean().optional().describe("替换所有匹配项"),
   }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -138,10 +138,10 @@ const editFileTool: Tool = {
 
 const writeFileTool: Tool = {
   name: "write_file",
-  description: "Create or overwrite a file with the given content.",
+  description: "创建或覆盖一个文件，写入给定的内容。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to write"),
-    content: z.string().describe("The content to write"),
+    file_path: z.string().describe("要写入的文件路径"),
+    content: z.string().describe("要写入的内容"),
   }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -154,9 +154,9 @@ const writeFileTool: Tool = {
 const listFilesTool: Tool = {
   name: "list_files",
   description:
-    "List files in a directory recursively. Use this to explore the codebase before reading specific files.",
+    "递归列出一个目录下的文件。在读取具体文件之前，用它来探索代码库。",
   inputSchema: z.object({
-    directory: z.string().optional().describe("Directory to list."),
+    directory: z.string().optional().describe("要列出的目录。"),
   }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -179,10 +179,10 @@ const listFilesTool: Tool = {
 const searchFilesTool: Tool = {
   name: "search_files",
   description:
-    "Search for a regex pattern in files. Returns matching lines with paths and line numbers. Use this to find code patterns and narrow down which files to read.",
+    "在文件中搜索一个正则表达式。返回匹配的行，并附带路径和行号。用它来查找代码模式，缩小需要读取的文件范围。",
   inputSchema: z.object({
-    pattern: z.string().describe("Regex pattern to search for"),
-    directory: z.string().optional().describe("Directory to search."),
+    pattern: z.string().describe("要搜索的正则表达式"),
+    directory: z.string().optional().describe("要搜索的目录。"),
   }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -217,9 +217,9 @@ const searchFilesTool: Tool = {
 const runCommandTool: Tool = {
   name: "run_command",
   description:
-    "Run a shell command. Use this for tasks like running tests, installing packages, or checking git status.",
+    "运行一个 shell 命令。可用于运行测试、安装依赖包或查看 git 状态等任务。",
   inputSchema: z.object({
-    command: z.string().describe("The shell command to run"),
+    command: z.string().describe("要运行的 shell 命令"),
   }),
   async call(input) {
     try {
@@ -244,7 +244,7 @@ const tools: Tool[] = [
   runCommandTool,
 ];
 
-// --- Zod to JSON Schema ---
+// --- Zod 转 JSON Schema ---
 function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   const shape = schema.shape;
   const properties: Record<string, unknown> = {};
@@ -265,7 +265,7 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- The agentic loop (now with system prompt) ---
+// --- 智能体循环（现在带上了系统提示词）---
 async function agentLoop(
   conversationHistory: Anthropic.MessageParam[]
 ): Promise<string> {
@@ -283,9 +283,9 @@ async function agentLoop(
     if (turns > maxTurns) return "[max turns reached]";
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
-      system: SYSTEM_PROMPT, // <-- The system prompt shapes behavior
+      system: SYSTEM_PROMPT, // <-- 系统提示词塑造行为
       tools: apiTools,
       messages: conversationHistory,
     });
@@ -358,10 +358,10 @@ async function main() {
     output: process.stdout,
   });
 
-  console.log("Agent with system prompt. Try:");
-  console.log('  "What components does sample-project have?"');
-  console.log('  "Change the heading size to text-4xl in sample-project"');
-  console.log('  "Fix the button" (it should ask which button)\n');
+  console.log("带系统提示词的智能体。试试：");
+  console.log('  “sample-project 有哪些组件？”');
+  console.log('  “把 sample-project 里的标题字号改成 text-4xl”');
+  console.log('  “修一下这个按钮”（它应该会反问是哪个按钮）\n');
 
   const ask = () => {
     rl.question("> ", async (input) => {

@@ -7,7 +7,7 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-// --- Tool interface (same as Chapter 2) ---
+// --- 工具接口（和第 2 章一样）---
 interface Tool {
   name: string;
   description: string;
@@ -15,22 +15,22 @@ interface Tool {
   call(input: Record<string, unknown>): Promise<string>;
 }
 
-// --- Track file read timestamps for staleness detection ---
+// --- 跟踪文件读取时间戳，用于过期检测 ---
 const readTimestamps = new Map<string, number>();
 
-// --- Quote normalization ---
-// The model sometimes outputs curly quotes when the file has straight quotes.
-// This function finds the actual string in the file, accounting for quote differences.
+// --- 引号归一化 ---
+// 模型有时会输出弯引号，而文件里用的是直引号。
+// 这个函数会在文件中找到真正的字符串，并考虑引号差异。
 function findActualString(
   fileContent: string,
   searchString: string
 ): string | null {
-  // Try exact match first
+  // 先尝试精确匹配
   if (fileContent.includes(searchString)) {
     return searchString;
   }
 
-  // Try with normalized quotes
+  // 再尝试归一化引号后匹配
   const normalize = (s: string) =>
     s
       .replace(/[\u2018\u2019]/g, "'")
@@ -47,20 +47,20 @@ function findActualString(
   return null;
 }
 
-// --- Tool implementations ---
+// --- 工具实现 ---
 
 const readFileTool: Tool = {
   name: "read_file",
   description:
-    "Read the contents of a file. Returns the file content with line numbers.",
+    "读取一个文件的内容。返回带行号的文件内容。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to read"),
+    file_path: z.string().describe("要读取的文件路径"),
   }),
   async call(input) {
     const filePath = input.file_path as string;
     try {
       const content = fs.readFileSync(filePath, "utf-8");
-      // Track when this file was read (for staleness detection)
+      // 记录文件的读取时间（用于过期检测）
       readTimestamps.set(path.resolve(filePath), Date.now());
       const lines = content.split("\n");
       return lines.map((line, i) => `${i + 1}\t${line}`).join("\n");
@@ -70,25 +70,25 @@ const readFileTool: Tool = {
   },
 };
 
-// --- The edit tool ---
-// This is the star of this chapter.
-// It uses string.replace() with uniqueness validation.
+// --- 编辑工具 ---
+// 这是本章的主角。
+// 它用 string.replace() 并配合唯一性校验。
 const editFileTool: Tool = {
   name: "edit_file",
   description:
-    "Edit a file by replacing old_string with new_string. " +
-    "The old_string must appear exactly once in the file (unless replace_all is true). " +
-    "Include enough surrounding context to make the match unique.",
+    "通过把 old_string 替换成 new_string 来编辑文件。" +
+    "old_string 必须在文件中恰好出现一次（除非 replace_all 为 true）。" +
+    "请包含足够多的上下文，以保证匹配是唯一的。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to edit"),
-    old_string: z.string().describe("The exact text to find"),
+    file_path: z.string().describe("要编辑的文件路径"),
+    old_string: z.string().describe("要查找的确切文本"),
     new_string: z
       .string()
-      .describe("The text to replace it with (must be different from old_string)"),
+      .describe("用来替换的文本（必须和 old_string 不同）"),
     replace_all: z
       .boolean()
       .optional()
-      .describe("Replace all occurrences. Defaults to false."),
+      .describe("替换所有匹配项。默认为 false。"),
   }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -96,26 +96,26 @@ const editFileTool: Tool = {
     const newString = input.new_string as string;
     const replaceAll = (input.replace_all as boolean) || false;
 
-    // 1. Check old_string != new_string
+    // 1. 检查 old_string != new_string
     if (oldString === newString) {
       return "Error: old_string and new_string are identical. No edit needed.";
     }
 
-    // 2. Check file exists
+    // 2. 检查文件是否存在
     if (!fs.existsSync(filePath)) {
       return `Error: File not found: ${filePath}`;
     }
 
-    // 3. Read the file
+    // 3. 读取文件
     const content = fs.readFileSync(filePath, "utf-8");
 
-    // 4. Find the actual string (with quote normalization)
+    // 4. 找到真正的字符串（含引号归一化）
     const actualString = findActualString(content, oldString);
     if (!actualString) {
       return "Error: The old_string was not found in the file.";
     }
 
-    // 5. Check uniqueness (unless replace_all)
+    // 5. 检查唯一性（除非 replace_all）
     if (!replaceAll) {
       const count = content.split(actualString).length - 1;
       if (count > 1) {
@@ -127,7 +127,7 @@ const editFileTool: Tool = {
       }
     }
 
-    // 6. Check staleness
+    // 6. 检查文件是否过期
     const resolvedPath = path.resolve(filePath);
     const lastRead = readTimestamps.get(resolvedPath);
     if (lastRead) {
@@ -137,18 +137,18 @@ const editFileTool: Tool = {
           return "Error: File has been modified since you last read it. Read the file again first.";
         }
       } catch {
-        // If we cannot stat, proceed anyway
+        // 如果无法 stat，就继续执行
       }
     }
 
-    // 7. Apply the edit
+    // 7. 应用编辑
     const updated = replaceAll
       ? content.split(actualString).join(newString)
       : content.replace(actualString, newString);
 
     fs.writeFileSync(filePath, updated);
 
-    // Update the read timestamp so the next edit does not fail the staleness check
+    // 更新读取时间戳，这样下一次编辑不会因过期检查而失败
     readTimestamps.set(resolvedPath, Date.now());
 
     return `Edited ${filePath}`;
@@ -158,10 +158,10 @@ const editFileTool: Tool = {
 const writeFileTool: Tool = {
   name: "write_file",
   description:
-    "Write content to a file. Creates parent directories if needed.",
+    "把内容写入一个文件。需要时会创建父目录。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to write"),
-    content: z.string().describe("The content to write"),
+    file_path: z.string().describe("要写入的文件路径"),
+    content: z.string().describe("要写入的内容"),
   }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -174,9 +174,9 @@ const writeFileTool: Tool = {
 const listFilesTool: Tool = {
   name: "list_files",
   description:
-    "List files in a directory recursively. Skips node_modules and hidden files.",
+    "递归列出一个目录下的文件。会跳过 node_modules 和隐藏文件。",
   inputSchema: z.object({
-    directory: z.string().optional().describe("Directory to list."),
+    directory: z.string().optional().describe("要列出的目录。"),
   }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -199,10 +199,10 @@ const listFilesTool: Tool = {
 const searchFilesTool: Tool = {
   name: "search_files",
   description:
-    "Search for a regex pattern in files. Returns matching lines with paths and line numbers.",
+    "在文件中搜索一个正则表达式。返回匹配的行，并附带路径和行号。",
   inputSchema: z.object({
-    pattern: z.string().describe("Regex pattern to search for"),
-    directory: z.string().optional().describe("Directory to search."),
+    pattern: z.string().describe("要搜索的正则表达式"),
+    directory: z.string().optional().describe("要搜索的目录。"),
   }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -236,9 +236,9 @@ const searchFilesTool: Tool = {
 
 const runCommandTool: Tool = {
   name: "run_command",
-  description: "Run a shell command and return its output.",
+  description: "运行一个 shell 命令并返回其输出。",
   inputSchema: z.object({
-    command: z.string().describe("The shell command to run"),
+    command: z.string().describe("要运行的 shell 命令"),
   }),
   async call(input) {
     try {
@@ -254,7 +254,7 @@ const runCommandTool: Tool = {
   },
 };
 
-// --- All tools ---
+// --- 所有工具 ---
 const tools: Tool[] = [
   readFileTool,
   editFileTool,
@@ -264,7 +264,7 @@ const tools: Tool[] = [
   runCommandTool,
 ];
 
-// --- Zod to JSON Schema converter (simplified) ---
+// --- Zod 转 JSON Schema 转换器（简化版）---
 function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   const shape = schema.shape;
   const properties: Record<string, unknown> = {};
@@ -285,7 +285,7 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- The agentic loop ---
+// --- 智能体循环 ---
 async function agentLoop(
   conversationHistory: Anthropic.MessageParam[]
 ): Promise<string> {
@@ -303,7 +303,7 @@ async function agentLoop(
     if (turns > maxTurns) return "[max turns reached]";
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       tools: apiTools,
       messages: conversationHistory,
@@ -377,9 +377,9 @@ async function main() {
     output: process.stdout,
   });
 
-  console.log("Agent with edit tool. Try:");
-  console.log('  "Change the button color to red in sample-project"');
-  console.log('  "Change the header title to Hello World in sample-project"');
+  console.log("带编辑工具的智能体。试试：");
+  console.log('  “把 sample-project 里的按钮颜色改成红色”');
+  console.log('  “把 sample-project 里的标题改成 Hello World”');
   console.log("");
 
   const ask = () => {

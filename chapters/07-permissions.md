@@ -1,46 +1,46 @@
-# Chapter 7: Permissions
+# 第 7 章：权限
 
-## The problem
+## 问题
 
-Our agent can run any shell command. `rm -rf /`. `git push --force origin main`. `curl` to some random server with your source code. The model will not do these things on purpose, but mistakes happen. And some tasks genuinely require dangerous operations.
+我们的智能体能运行任何 shell 命令。`rm -rf /`。`git push --force origin main`。用 `curl` 把你的源码发到某个莫名其妙的服务器。模型不会故意干这些事，但失误总会发生。而且有些任务确实需要危险操作。
 
-You need a gate between "the model wants to do something" and "the thing actually happens."
+你需要在“模型想做某事”和“这件事真的发生”之间设一道闸门。
 
-## Walkthrough: Should this command run?
+## 实例：这条命令该不该运行？
 
-The model wants to run `npm install express`. Is that safe?
+模型想运行 `npm install express`。这安全吗？
 
-It depends. If the user asked to "add Express to the project," then yes. If the user asked to "read the README," then no, the model should not be installing packages on its own.
+看情况。如果用户要求“把 Express 加到项目里”，那就安全。如果用户要求“读一下 README”，那就不安全，模型不该擅自装包。
 
-A permission system lets the user decide:
+权限系统让用户来决定：
 
 ```
   [tool] run_command({ command: "npm install express" })
 
-  The agent wants to run: npm install express
-  Allow? [y]es / [n]o / [a]lways allow this pattern
+  智能体想要运行：npm install express
+  允许吗？[y]是 / [n]否 / [a]总是允许这个模式
   > y
 
   [result] added 1 package...
 ```
 
-The user saw what was about to happen and approved it. If they had pressed "n", the model would get an error back and try a different approach.
+用户看到了即将发生的事，并批准了它。如果他按了“n”，模型会收到一个错误，然后换一个思路试试。
 
-## The three decisions
+## 三种决策
 
-Every tool call results in one of three decisions:
+每次工具调用都会落到三种决策之一：
 
-| Decision | What happens |
+| 决策 | 会发生什么 |
 |---|---|
-| **allow** | The tool runs immediately. The user is not asked. |
-| **ask** | The user sees the tool call and approves or denies it. |
-| **deny** | The tool is rejected with an error message. The user is not asked. |
+| **allow** | 工具立即运行。不征询用户。 |
+| **ask** | 用户看到这次工具调用，批准或拒绝。 |
+| **deny** | 工具被拒绝，返回一条错误消息。不征询用户。 |
 
-"Allow" is for safe operations like reading files. "Ask" is for things that could be dangerous. "Deny" is for things you never want to happen.
+“allow”用于读文件之类的安全操作。“ask”用于可能有危险的操作。“deny”用于你永远不希望发生的事。
 
-## Adding checkPermissions to tools
+## 给工具加上 checkPermissions
 
-We extend the tool interface with a `checkPermissions` method:
+我们给工具接口扩展一个 `checkPermissions` 方法：
 
 ```typescript
 type PermissionDecision = "allow" | "ask" | "deny";
@@ -54,20 +54,20 @@ interface Tool {
 }
 ```
 
-Each tool decides whether it needs permission:
+每个工具自己决定它需不需要权限：
 
 ```typescript
 const readFileTool: Tool = {
   // ...
   checkPermissions() {
-    return "allow"; // Reading is always safe
+    return "allow"; // 读取始终安全
   },
 };
 
 const editFileTool: Tool = {
   // ...
   checkPermissions() {
-    return "ask"; // Editing files needs approval
+    return "ask"; // 编辑文件需要批准
   },
 };
 
@@ -75,31 +75,31 @@ const runCommandTool: Tool = {
   // ...
   checkPermissions(input) {
     const command = input.command as string;
-    // Some commands are safe
+    // 有些命令是安全的
     if (/^(ls|cat|echo|pwd|git status|git diff|git log)/.test(command)) {
       return "allow";
     }
-    // Everything else needs approval
+    // 其他一律需要批准
     return "ask";
   },
 };
 ```
 
-The run_command tool is the most interesting. Some commands are read-only (like `ls` or `git status`). Those are safe. Everything else gets an "ask."
+run_command 工具最有意思。有些命令是只读的（比如 `ls` 或 `git status`），那些是安全的。其他一律给个“ask”。
 
-## Permission modes
+## 权限模式
 
-Different users want different levels of control. Some want to approve every single action. Some want the agent to just do its thing. Permission modes let the user choose:
+不同用户想要不同程度的掌控。有的想批准每一个动作。有的想让智能体自己放手去干。权限模式让用户来选：
 
 ```typescript
 type PermissionMode = "default" | "plan" | "yolo";
 
-// default: ask for writes and commands, allow reads
-// plan:    read-only mode, deny all writes and commands
-// yolo:    allow everything (dangerous, but useful for trusted tasks)
+// default: 写入和命令要征询，读取放行
+// plan:    只读模式，拒绝所有写入和命令
+// yolo:    什么都放行（危险，但对可信任务有用）
 ```
 
-The mode overrides individual tool decisions:
+模式会覆盖单个工具的决策：
 
 ```typescript
 function getEffectiveDecision(
@@ -108,25 +108,25 @@ function getEffectiveDecision(
 ): PermissionDecision {
   switch (mode) {
     case "yolo":
-      return "allow"; // Override everything to allow
+      return "allow"; // 一切覆盖为放行
     case "plan":
-      // Only allow read-only operations
+      // 只放行只读操作
       if (toolDecision === "allow") return "allow";
       return "deny";
     case "default":
-      return toolDecision; // Use the tool's own decision
+      return toolDecision; // 用工具自己的决策
   }
 }
 ```
 
-## Permission rules
+## 权限规则
 
-Beyond modes, you can add specific rules. "Always allow `npm test`." "Never allow `rm`." Rules override the default behavior for specific patterns.
+除了模式，你还可以加一些具体规则。“总是允许 `npm test`。”“绝不允许 `rm`。”规则会针对特定模式覆盖默认行为。
 
 ```typescript
 interface PermissionRule {
   toolName: string;
-  pattern?: string; // Regex pattern for the input
+  pattern?: string; // 针对输入的正则模式
   decision: "allow" | "deny";
 }
 
@@ -145,15 +145,15 @@ function checkRules(
     if (rule.pattern && !new RegExp(rule.pattern).test(inputStr)) continue;
     return rule.decision;
   }
-  return null; // No matching rule
+  return null; // 没有匹配的规则
 }
 ```
 
-Rules are checked before the tool's own `checkPermissions`. If a rule matches, it takes priority.
+规则会在工具自己的 `checkPermissions` 之前检查。如果有规则匹配，它优先。
 
-## The permission dialog
+## 权限对话框
 
-When the decision is "ask," we show the user what the agent wants to do:
+当决策是“ask”时，我们向用户展示智能体想做什么：
 
 ```typescript
 async function askUserPermission(
@@ -162,18 +162,18 @@ async function askUserPermission(
   rl: readline.Interface
 ): Promise<boolean> {
   const inputStr = JSON.stringify(input, null, 2);
-  console.log(`\n  The agent wants to use: ${toolName}`);
-  console.log(`  Input: ${inputStr}`);
+  console.log(`\n  智能体想要使用：${toolName}`);
+  console.log(`  输入：${inputStr}`);
 
   return new Promise((resolve) => {
     rl.question(
-      "  Allow? [y]es / [n]o / [a]lways allow this tool > ",
+      "  允许吗？[y]是 / [n]否 / [a]总是允许这个工具 > ",
       (answer) => {
         const choice = answer.trim().toLowerCase();
         if (choice === "a" || choice === "always") {
-          // Add a session rule to always allow this tool
+          // 加一条会话规则，总是允许这个工具
           rules.push({ toolName, decision: "allow" });
-          console.log(`  Added rule: always allow ${toolName}`);
+          console.log(`  已添加规则：总是允许 ${toolName}`);
           resolve(true);
         }
         resolve(choice === "y" || choice === "yes");
@@ -183,17 +183,17 @@ async function askUserPermission(
 }
 ```
 
-The "always" option adds a session rule so the user does not get asked again for the same tool. This is convenient for repetitive operations. In our example, the rule lasts for the current session only (stored in memory).
+“always”选项会加一条会话规则，这样同一个工具就不会再反复问用户了。对重复性操作来说这很方便。在我们的例子里，这条规则只对当前会话有效（存在内存里）。
 
-Production agents take this further. They let users save rules to different places:
+生产级智能体会更进一步。它们让用户把规则存到不同的地方：
 
-- **Session** - in memory, gone when the session ends
-- **Project settings** - saved to a file in the project (e.g., `.claude/settings.json`), shared with the team
-- **User settings** - saved to a global config file (e.g., `~/.claude/settings.json`), applies to all projects
+- **会话** —— 在内存里，会话结束就没了
+- **项目设置** —— 存到项目里的某个文件（比如 `.claude/settings.json`），与团队共享
+- **用户设置** —— 存到全局配置文件（比如 `~/.claude/settings.json`），对所有项目生效
 
-This way, a user can say "always allow `npm test` in this project" and it persists across sessions.
+这样，用户就可以说“在这个项目里总是允许 `npm test`”，而且它会跨会话保留下来。
 
-## The permission check flow
+## 权限检查流程
 
 ```mermaid
 flowchart TD
@@ -212,17 +212,17 @@ flowchart TD
     G -->|User: always| H[Add rule + execute]
 ```
 
-## Wiring it into the loop
+## 把它接进循环
 
-The permission check goes between "model requests tool" and "tool executes":
+权限检查放在“模型请求工具”和“工具执行”之间：
 
 ```typescript
-// In the agentic loop, when executing tools:
+// 在智能体循环里，执行工具时：
 for (const toolUse of toolUseBlocks) {
   const tool = tools.find((t) => t.name === toolUse.name);
-  if (!tool) { /* handle unknown tool */ continue; }
+  if (!tool) { /* 处理未知工具 */ continue; }
 
-  // Permission check (new!)
+  // 权限检查（新增！）
   const ruleDecision = checkRules(tool.name, toolUse.input);
   const toolDecision = ruleDecision ?? tool.checkPermissions(toolUse.input);
   const finalDecision = getEffectiveDecision(toolDecision, permissionMode);
@@ -231,7 +231,7 @@ for (const toolUse of toolUseBlocks) {
     toolResults.push({
       type: "tool_result",
       tool_use_id: toolUse.id,
-      content: "Permission denied. This operation is not allowed.",
+      content: "权限被拒绝。不允许此操作。",
       is_error: true,
     });
     continue;
@@ -243,32 +243,32 @@ for (const toolUse of toolUseBlocks) {
       toolResults.push({
         type: "tool_result",
         tool_use_id: toolUse.id,
-        content: "Permission denied by user.",
+        content: "用户拒绝了权限。",
         is_error: true,
       });
       continue;
     }
   }
 
-  // Execute the tool (same as before)
+  // 执行工具（跟之前一样）
   const result = await tool.call(parsed.data);
   // ...
 }
 ```
 
-When a tool is denied, the model gets an error back. It does not crash. The model sees "Permission denied" and can adjust. Maybe it asks the user for help. Maybe it tries a different approach. The loop continues.
+当一个工具被拒绝时，模型会收到一个错误，而不会崩溃。模型看到“权限被拒绝”，就能调整。也许它向用户求助，也许它换一个思路。循环继续。
 
-## What is still missing
+## 还缺什么
 
-Our agent runs everything in one big conversation. Complex tasks sometimes benefit from splitting the work. "Explore the codebase" is a separate concern from "make the edit." In the next chapter, we will build subagents that can do isolated work and report back.
+我们的智能体把一切都放在一大段对话里跑。复杂任务有时拆开来做会更好。“探索代码库”和“做这处修改”是两件不同的事。下一章，我们会构建子代理，它们可以做隔离的工作，然后回来汇报。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:07
 ```
 
-Try:
-- "Read the Button component" (should auto-allow, no prompt)
-- "Run npm --version" (should ask for permission)
-- "Delete all files" (the model may try `rm`, which should trigger a permission prompt)
+试试：
+- “读一下 Button 组件”（应该自动放行，不弹提示）
+- “运行 npm --version”（应该征询权限）
+- “删掉所有文件”（模型可能会试 `rm`，这应该会触发一次权限提示）

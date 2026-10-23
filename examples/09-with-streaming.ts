@@ -1,6 +1,6 @@
-// This example focuses on: streaming (Chapter 9).
-// Includes: tools (Ch2), edit (Ch3), system prompt (Ch4), context (Ch5), compression (Ch6).
-// Omits: permissions (Ch7), subagents (Ch8) to keep the code focused on streaming.
+// 本示例聚焦于: 流式(第 9 章)。
+// 包含: 工具(第 2 章)、编辑(第 3 章)、系统提示词(第 4 章)、上下文(第 5 章)、压缩(第 6 章)。
+// 省略: 权限(第 7 章)、子代理(第 8 章),让代码专注于流式。
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -11,9 +11,9 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You are a coding assistant. Use list_files and search_files to find files before editing. Always read before editing. Be concise.`;
+const SYSTEM_PROMPT = `你是一个编程助手。编辑前先用 list_files 和 search_files 找到相关文件。编辑前永远先读文件。保持简洁。`;
 
-// --- Types ---
+// --- 类型 ---
 interface Tool {
   name: string;
   description: string;
@@ -50,10 +50,10 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- Tools ---
+// --- 工具 ---
 const tools: Tool[] = [
   {
-    name: "read_file", description: "Read a file with line numbers.",
+    name: "read_file", description: "读取文件,带行号。",
     inputSchema: z.object({ file_path: z.string() }),
     async call(input) {
       const fp = input.file_path as string;
@@ -65,7 +65,7 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "edit_file", description: "Edit a file by replacing old_string with new_string.",
+    name: "edit_file", description: "编辑文件,用 new_string 替换 old_string。",
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() }),
     async call(input) {
       const { file_path: fp, old_string: os, new_string: ns, replace_all: ra } = input as any;
@@ -82,7 +82,7 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "write_file", description: "Create or overwrite a file.",
+    name: "write_file", description: "创建或覆盖文件。",
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     async call(input) {
       const fp = input.file_path as string;
@@ -92,7 +92,7 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "list_files", description: "List files recursively.",
+    name: "list_files", description: "递归列出文件。",
     inputSchema: z.object({ directory: z.string().optional() }),
     async call(input) {
       const dir = (input.directory as string) || ".";
@@ -111,7 +111,7 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "search_files", description: "Search for a regex pattern in files.",
+    name: "search_files", description: "在文件中搜索正则表达式模式。",
     inputSchema: z.object({ pattern: z.string(), directory: z.string().optional() }),
     async call(input) {
       const dir = (input.directory as string) || ".";
@@ -137,7 +137,7 @@ const tools: Tool[] = [
     },
   },
   {
-    name: "run_command", description: "Run a shell command.",
+    name: "run_command", description: "执行一条 shell 命令。",
     inputSchema: z.object({ command: z.string() }),
     async call(input) {
       try {
@@ -153,9 +153,9 @@ const apiTools: Anthropic.Tool[] = tools.map((t) => ({
   input_schema: zodToJsonSchema(t.inputSchema) as Anthropic.Tool["input_schema"],
 }));
 
-// --- Streaming agentic loop ---
-// The main difference from previous chapters: we use client.messages.stream()
-// instead of client.messages.create(). Text is printed as it arrives.
+// --- 流式智能体循环 ---
+// 与前几章的主要区别: 使用 client.messages.stream()
+// 而不是 client.messages.create()。文本随着到达逐步打印。
 
 async function agentLoop(
   messages: Anthropic.MessageParam[]
@@ -167,16 +167,16 @@ async function agentLoop(
     turns++;
     if (turns > maxTurns) return "[max turns reached]";
 
-    // Use streaming API instead of create()
+    // 使用流式 API 而不是 create()
     const stream = client.messages.stream({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: apiTools,
       messages,
     });
 
-    // Accumulate content blocks while streaming text to the user
+    // 一边向用户流式输出文本,一边累积内容块
     const contentBlocks: any[] = [];
     let currentBlockType: string | null = null;
     let currentToolInput = "";
@@ -201,14 +201,14 @@ async function agentLoop(
 
         case "content_block_delta":
           if (event.delta.type === "text_delta") {
-            // Stream text to the user immediately
+            // 立即把文本流式输出给用户
             process.stdout.write(event.delta.text);
-            // Accumulate for history
+            // 累积到历史中
             if (currentTextIndex >= 0) {
               contentBlocks[currentTextIndex].text += event.delta.text;
             }
           } else if (event.delta.type === "input_json_delta") {
-            // Buffer tool input (cannot parse until complete)
+            // 缓存工具输入(未完整前无法解析)
             currentToolInput += event.delta.partial_json;
           }
           break;
@@ -237,16 +237,16 @@ async function agentLoop(
       }
     }
 
-    // Add the complete response to conversation history
+    // 把完整的响应加入对话历史
     messages.push({ role: "assistant", content: contentBlocks });
 
-    // Check for tool use
+    // 检查是否有工具调用
     const toolBlocks = contentBlocks.filter(
       (b: any) => b.type === "tool_use"
     ) as Anthropic.ToolUseBlock[];
 
     if (toolBlocks.length === 0) {
-      // No tools. Return the accumulated text.
+      // 没有工具调用。返回累积的文本。
       process.stdout.write("\n");
       return contentBlocks
         .filter((b: any) => b.type === "text")
@@ -254,7 +254,7 @@ async function agentLoop(
         .join("\n");
     }
 
-    // Execute tools
+    // 执行工具
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const toolUse of toolBlocks) {
@@ -270,9 +270,9 @@ async function agentLoop(
         continue;
       }
 
-      console.log(`\n  [tool] ${tool.name}(${JSON.stringify(toolUse.input).slice(0, 100)})`);
+      console.log(`\n  [工具] ${tool.name}(${JSON.stringify(toolUse.input).slice(0, 100)})`);
       const result = await tool.call(parsed.data);
-      console.log(`  [result] ${result.slice(0, 150)}${result.length > 150 ? "..." : ""}`);
+      console.log(`  [结果] ${result.slice(0, 150)}${result.length > 150 ? "..." : ""}`);
       toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: result });
     }
 
@@ -285,8 +285,8 @@ async function main() {
   const conversationHistory: Anthropic.MessageParam[] = [];
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log("Streaming agent. Text appears token by token.");
-  console.log('Try: "Explain what the Button component does in sample-project"\n');
+  console.log("流式智能体。文本逐 token 显示。");
+  console.log('试试: "解释一下 sample-project 里的 Button 组件是做什么的"\n');
 
   const ask = () => {
     rl.question("> ", async (input) => {

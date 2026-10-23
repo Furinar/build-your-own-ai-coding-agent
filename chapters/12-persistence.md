@@ -1,42 +1,42 @@
-# Chapter 12: Persistence
+# 第 12 章：持久化
 
-## The problem
+## 问题所在
 
-Close the agent and everything is gone. The conversation, the files it read, what you were working on. Open it again and it starts from zero. "What were we doing?" "I have no idea."
+关掉智能体，一切都没了——对话、读过的文件、你正在做的事。再打开它，又得从零开始。“我们刚才在干嘛来着？”“完全不知道。”
 
-For short tasks this is fine. For longer projects that span multiple sessions, it is a problem. You want to close your laptop, come back tomorrow, and pick up where you left off.
+对短任务来说这没关系。但对跨越多次会话的长项目来说，这就是个问题了。你希望能合上笔记本，明天回来，从上次停下的地方接着干。
 
-## What is persistence?
+## 什么是持久化？
 
-Persistence means saving the agent's state to disk so it can be restored later. There are three parts:
+持久化就是把智能体的状态保存到磁盘，以便之后恢复。它有三个部分：
 
-1. **Conversation history**: Save the messages so the agent can resume a previous session.
-2. **Project instructions**: A file in the project that tells the agent how to behave in this specific codebase. Persists across all sessions.
-3. **Memory**: Notes the agent saves about you or the project. Persists across sessions.
+1. **对话历史**：保存消息，让智能体能恢复上一次的会话。
+2. **项目说明**：项目里的一个文件，告诉智能体在这个特定代码库里该怎么做。它在所有会话间都持续有效。
+3. **记忆**：智能体记下的关于你或项目的笔记。它在会话间持续有效。
 
-## Walkthrough: Resume a session
+## 演练：恢复一次会话
 
 ```
-Session 1 (Monday):
-  > Help me refactor the auth module
-  ... (20 turns of reading, editing, testing)
-  > I need to go, let's continue tomorrow
-  Session saved to .agent/session.jsonl
+会话 1（周一）：
+  > 帮我重构 auth 模块
+  ...（20 轮的读取、编辑、测试）
+  > 我得走了，明天继续吧
+  会话已保存到 .agent/session.jsonl
 
-Session 2 (Tuesday):
+会话 2（周二）：
   > /resume
-  Loaded 45 messages from previous session.
-  > Continue where we left off
-  The agent sees the full conversation from Monday.
-  It knows which files it read, what changes it made.
-  It picks up from where it stopped.
+  已从上次会话加载 45 条消息。
+  > 从上次停下的地方继续
+  智能体看到了周一的完整对话。
+  它知道自己读过哪些文件、做了哪些改动。
+  它从停下的地方接着来。
 ```
 
-The agent did not re-read every file. It did not re-discover the project structure. All of that was in the saved conversation.
+智能体没有重新读一遍每个文件，也没有重新摸索项目结构。这些都在保存下来的对话里。
 
-## Saving conversations to disk
+## 把对话保存到磁盘
 
-The simplest format for saving conversations is JSONL (JSON Lines). Each line is one JSON object. You append a new line for each message. No need to read and rewrite the whole file.
+保存对话最简单的格式是 JSONL（JSON Lines）。每一行是一个 JSON 对象，每来一条消息就追加一行。不需要把整个文件读出来再重写。
 
 ```typescript
 import * as fs from "fs";
@@ -50,29 +50,29 @@ function saveMessage(message: Anthropic.MessageParam): void {
 }
 ```
 
-Why JSONL instead of plain JSON? With JSON, you would need to read the entire file, parse it, add the message, and write it back. With JSONL, you just append a line. This is faster and safer. If the process crashes mid-write, you lose at most one line instead of corrupting the whole file.
+为什么用 JSONL 而不是普通 JSON？用 JSON 的话，你得把整个文件读出来、解析、加上新消息、再写回去。用 JSONL，你只要追加一行。这更快也更安全。如果进程在写到一半时崩溃，你最多丢一行，而不会把整个文件搞坏。
 
-You call `saveMessage` in the agentic loop every time a message is added:
+你在智能体循环里每添加一条消息就调用一次 `saveMessage`：
 
 ```typescript
-// After the user sends a message:
+// 用户发送消息之后：
 conversationHistory.push({ role: "user", content: userInput });
 saveMessage({ role: "user", content: userInput });
 
-// After the assistant responds:
+// 助手响应之后：
 conversationHistory.push({ role: "assistant", content: response.content });
 saveMessage({ role: "assistant", content: response.content });
 
-// After tool results:
+// 工具结果之后：
 conversationHistory.push({ role: "user", content: toolResults });
 saveMessage({ role: "user", content: toolResults });
 ```
 
-Every message is saved as it happens. Not at the end of the session.
+每条消息都是即时保存的，不是等会话结束才存。
 
-## Loading and resuming
+## 加载并恢复
 
-To resume, read the JSONL file and parse each line back into a message:
+要恢复，就读取 JSONL 文件，把每一行解析回一条消息：
 
 ```typescript
 function loadSession(): Anthropic.MessageParam[] {
@@ -87,31 +87,31 @@ function loadSession(): Anthropic.MessageParam[] {
 }
 ```
 
-When the user types `/resume`, load the messages and continue. This goes in the REPL input handler, before the user's input is sent to the agentic loop:
+当用户输入 `/resume` 时，加载消息并继续。这段逻辑放在 REPL 的输入处理里，在用户输入被送进智能体循环之前：
 
 ```typescript
-// In the REPL, where you read user input:
+// 在 REPL 里读取用户输入的地方：
 rl.question("> ", async (userInput) => {
-  // Handle commands before sending to the agent
+  // 在送给智能体之前先处理命令
   if (userInput === "/resume") {
     const loaded = loadSession();
     if (loaded.length === 0) {
-      console.log("No previous session found.");
+      console.log("没有找到之前的会话。");
     } else {
       conversationHistory.push(...loaded);
-      console.log(`Loaded ${loaded.length} messages from previous session.`);
+      console.log(`已从上次会话加载 ${loaded.length} 条消息。`);
     }
-    return ask(); // Go back to the prompt, do not send to the agent
+    return ask(); // 回到提示符，不送给智能体
   }
 
   if (userInput === "/new") {
     if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE);
     conversationHistory.length = 0;
-    console.log("Started new session.");
+    console.log("已开始新会话。");
     return ask();
   }
 
-  // Normal input: save and send to the agent
+  // 普通输入：保存并送给智能体
   conversationHistory.push({ role: "user", content: userInput });
   saveMessage({ role: "user", content: userInput });
   const response = await agentLoop(conversationHistory);
@@ -119,38 +119,38 @@ rl.question("> ", async (userInput) => {
 });
 ```
 
-The `/resume` and `/new` commands are intercepted before the input reaches the agent. They are not tool calls. They are REPL commands that modify the conversation history directly.
+`/resume` 和 `/new` 命令在输入到达智能体之前就被拦截。它们不是工具调用，而是直接修改对话历史的 REPL 命令。
 
-After `/resume`, the model sees the entire previous conversation on the next turn. It can reference files it read, edits it made, and decisions from the last session.
+执行 `/resume` 之后，模型在下一轮就能看到之前的整段对话。它可以引用读过的文件、做过的编辑，以及上次会话里的决定。
 
-### Showing previous sessions
+### 展示历史会话
 
-Our example saves one session file. But what if the user has had many sessions and wants to pick which one to resume?
+我们的示例只保存一个会话文件。但如果用户有过很多次会话，想挑一个来恢复呢？
 
-Production agents save each session with a unique ID (e.g., `session-<uuid>.jsonl`) and store metadata like the first user message, a title, and the timestamp. When the user asks to resume, the agent shows a list:
+生产级智能体会给每个会话一个唯一 ID（比如 `session-<uuid>.jsonl`），并存上一些元数据，比如第一条用户消息、一个标题和时间戳。当用户要求恢复时，智能体就列出一个清单：
 
 ```
-Previous sessions:
-  1. [Apr 3] "Help me refactor the auth module"
-  2. [Apr 1] "Add dark mode to the settings page"
-  3. [Mar 28] "Fix the login bug"
+之前的会话：
+  1. [4 月 3 日] “帮我重构 auth 模块”
+  2. [4 月 1 日] “给设置页加上深色模式”
+  3. [3 月 28 日] “修复登录 bug”
 
-Which session? >
+要恢复哪个会话？ >
 ```
 
-They do not parse the entire JSONL file to show this list. Instead, they read just the first and last few lines of each file (head and tail) to extract the title and last prompt. This is fast even with large session files.
+它们不会为了展示这个列表而解析整个 JSONL 文件。相反，它们只读每个文件的头几行和尾几行（head 和 tail），从中提取标题和最后一条提示词。即便会话文件很大，这样也很快。
 
-For our example, a single session file is enough. But if you want to support multiple sessions, the pattern is: give each session a unique filename, store a summary in the first line, and list them by reading just the headers:
+对我们的示例来说，单个会话文件就够了。但如果你想支持多个会话，模式是这样的：给每个会话一个唯一的文件名，把摘要存在第一行，列出时只读这些文件头：
 
 ```typescript
-// Save with a unique ID and a summary as the first line
+// 用唯一 ID 保存，并把摘要作为第一行
 const sessionId = crypto.randomUUID();
 const sessionFile = `.agent/sessions/${sessionId}.jsonl`;
 fs.appendFileSync(sessionFile,
   JSON.stringify({ type: "metadata", summary: userInput, createdAt: Date.now() }) + "\n"
 );
 
-// List sessions by reading only the first line of each file
+// 只读每个文件的第一行来列出会话
 function listSessions(): { id: string; summary: string; date: string }[] {
   const dir = ".agent/sessions";
   if (!fs.existsSync(dir)) return [];
@@ -170,13 +170,13 @@ function listSessions(): { id: string; summary: string; date: string }[] {
 }
 ```
 
-The first line of each file is a metadata entry with the summary. Listing sessions only reads that one line per file, not the entire conversation.
+每个文件的第一行是一条带摘要的元数据记录。列出会话时，每个文件只读这一行，而不是整段对话。
 
-## Project instructions
+## 项目说明
 
-Some instructions apply to every session in a project. "This project uses Tailwind." "Run tests with npm test." "The API is in src/api/." You do not want to repeat these every time you start the agent.
+有些说明对项目里的每次会话都适用。“这个项目用 Tailwind。”“用 npm test 跑测试。”“API 在 src/api/ 里。”你不会想每次启动智能体时都把这些重说一遍。
 
-The solution: a markdown file in the project root that the agent reads automatically. We call it `AGENT.md`, but you can name it anything. Claude Code uses `CLAUDE.md`, Codex uses `AGENTS.md`. The name does not matter. The idea is the same.
+解决办法是：在项目根目录放一个 Markdown 文件，智能体自动读取。我们叫它 `AGENT.md`，但你爱叫什么都行。Claude Code 用的是 `CLAUDE.md`，Codex 用的是 `AGENTS.md`。名字不重要，思路是一样的。
 
 ```typescript
 const PROJECT_INSTRUCTIONS_FILE = "AGENT.md";
@@ -189,41 +189,41 @@ function loadProjectInstructions(): string | null {
 }
 ```
 
-If the file exists, its content gets added to the system prompt. We will wire this into `buildSystemPrompt()` later in this chapter, along with memory.
+如果这个文件存在，它的内容就会被加进系统提示词。本章后面我们会把它连同记忆一起接入 `buildSystemPrompt()`。
 
-Now any developer on the team can add a `AGENT.md` to the repo:
+现在团队里任何开发者都可以往仓库里加一个 `AGENT.md`：
 
 ```markdown
-# Project Instructions
+# 项目说明
 
-- This is a React + TypeScript project using Tailwind CSS.
-- Run tests with `npm test`.
-- The API layer is in `src/api/`. Do not modify files in `src/generated/`.
-- Use functional components, not class components.
-- Always add types for function parameters.
+- 这是一个用 Tailwind CSS 的 React + TypeScript 项目。
+- 用 `npm test` 跑测试。
+- API 层在 `src/api/`。不要改 `src/generated/` 里的文件。
+- 用函数组件，不要用类组件。
+- 函数参数总是要加类型。
 ```
 
-The agent reads this on every startup and follows the instructions. It is like an onboarding document for the AI.
+智能体每次启动都读这个文件并遵照执行。这就像给 AI 的一份入职文档。
 
-### Priority levels
+### 优先级层次
 
-Production agents support multiple instruction files at different levels:
+生产级智能体支持多个不同层级的说明文件：
 
 ```
-~/.agent/AGENT.md             → global (all projects)
-./AGENT.md                    → project (shared with team)
-./AGENT.local.md              → local (your personal overrides, gitignored)
+~/.agent/AGENT.md             → 全局（所有项目）
+./AGENT.md                    → 项目（和团队共享）
+./AGENT.local.md              → 本地（你个人的覆盖项，被 gitignore）
 ```
 
-Each level adds to the previous one. Global instructions apply everywhere. Project instructions apply to this repo. Local instructions are your personal preferences that you do not want to commit.
+每一层都在前一层基础上叠加。全局说明到处适用，项目说明适用于这个仓库，本地说明是你不想提交的个人偏好。
 
-For our example, we keep it simple with one file. But the pattern extends naturally.
+我们的示例保持简单，只用一个文件。但这个模式可以很自然地扩展。
 
-## Memory across sessions
+## 跨会话的记忆
 
-Project instructions are static. You write them once and they stay. But what about things the agent learns during a conversation? "The user prefers tabs over spaces." "The deploy key is in 1Password." "We decided to use Zustand instead of Redux."
+项目说明是静态的。你写一次，它们就一直在。但智能体在对话中学到的东西呢？“用户喜欢用 tab 而不是空格。”“部署密钥在 1Password 里。”“我们决定用 Zustand 而不是 Redux。”
 
-Memory is a file the agent can read and write. It persists across sessions:
+记忆是一个智能体可以读写的文件，它在会话间持续有效：
 
 ```typescript
 const MEMORY_FILE = ".agent/memory.md";
@@ -241,12 +241,12 @@ const memoryTool: Tool = {
     const content = input.content as string;
     const timestamp = new Date().toISOString().split("T")[0];
     fs.appendFileSync(MEMORY_FILE, `\n- [${timestamp}] ${content}`);
-    return "Saved to memory.";
+    return "已保存到记忆。";
   },
 };
 ```
 
-On startup, load the memory file and add it to the system prompt. In Chapter 4, our system prompt was a simple constant. Now it needs to include dynamic content (project instructions and memory), so we turn it into a function that builds the full prompt from all sources:
+启动时，加载记忆文件并加进系统提示词。在第 4 章，我们的系统提示词是个简单常量。现在它需要包含动态内容（项目说明和记忆），所以我们把它变成一个函数，从所有来源拼出完整的提示词：
 
 ```typescript
 function loadMemory(): string | null {
@@ -255,30 +255,30 @@ function loadMemory(): string | null {
 }
 
 function buildSystemPrompt(): string {
-  const base = `You are a coding assistant. You can read, search, and edit local files.
-Use save_memory to remember important things about the user or project.`;
+  const base = `你是一个编程助手。你可以读取、搜索、编辑本地文件。
+用 save_memory 记下关于用户或项目的重要信息。`;
 
   const parts = [base];
 
   const instructions = loadProjectInstructions();
   if (instructions) {
-    parts.push(`# Project Instructions (from AGENT.md)\n${instructions}`);
+    parts.push(`# 项目说明（来自 AGENT.md）\n${instructions}`);
   }
 
   const memory = loadMemory();
   if (memory) {
-    parts.push(`# Memory (from previous sessions)\n${memory}`);
+    parts.push(`# 记忆（来自以往会话）\n${memory}`);
   }
 
   return parts.join("\n\n");
 }
 ```
 
-Call `buildSystemPrompt()` inside the agentic loop, not once at startup. This way, if the agent saves a memory on turn 3, the system prompt on turn 4 includes it:
+在智能体循环里调用 `buildSystemPrompt()`，而不是启动时只调用一次。这样，如果智能体在第 3 轮保存了一条记忆，第 4 轮的系统提示词就会包含它：
 
 ```typescript
 while (true) {
-  const systemPrompt = buildSystemPrompt(); // fresh every turn
+  const systemPrompt = buildSystemPrompt(); // 每轮都重新构建
 
   const stream = client.messages.stream({
     model: "claude-sonnet-4-20250514",
@@ -288,38 +288,38 @@ while (true) {
     messages,
   });
 
-  // ... rest of the loop
+  // ... 循环的其余部分
 }
 ```
 
-The agent sees its own past notes every session. Over time, the memory file builds up a picture of the user and the project:
+智能体每次会话都能看到自己过去的笔记。随着时间推移，记忆文件逐渐拼出一幅关于用户和项目的全景：
 
 ```markdown
-- [2026-03-15] User prefers Tailwind over inline styles
-- [2026-03-15] The database migration tool is in scripts/migrate.ts
-- [2026-03-18] User decided to use Zustand for state management
-- [2026-04-01] Deploy process: run npm run build, then scripts/deploy.sh
+- [2026-03-15] 用户偏好 Tailwind，不喜欢内联样式
+- [2026-03-15] 数据库迁移工具在 scripts/migrate.ts
+- [2026-03-18] 用户决定用 Zustand 做状态管理
+- [2026-04-01] 部署流程：先 npm run build，再 scripts/deploy.sh
 ```
 
-Production agents go further with AI-powered memory selection. Instead of loading the entire memory file, they use a cheap model to pick the 5-10 most relevant memories for the current task. But simple "load everything" works fine for smaller memory files.
+生产级智能体更进一步，用 AI 来挑选记忆。它们不会加载整个记忆文件，而是用一个便宜的模型挑出和当前任务最相关的 5 到 10 条记忆。不过对于较小的记忆文件，简单的“全部加载”就够用了。
 
-## What is still missing
+## 还缺什么
 
-Nothing. You have now built a complete AI coding agent with 12 features layered on top of a simple while loop. The next and final chapter wraps up with ideas for where to go from here.
+没有了。你现在已经构建出一个完整的 AI 编程智能体，在一个简单的 while 循环之上叠了 12 项特性。下一章也是最后一章，会做个收尾，给出一些可以继续往下走的方向。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:12
 ```
 
-Try:
-1. Have a conversation ("read the Button component in sample-project")
-2. Close the agent (Ctrl+C)
-3. Run it again and type `/resume`
-4. The agent loads the previous conversation
+试试：
+1. 进行一段对话（“读一下 sample-project 里的 Button 组件”）
+2. 关掉智能体（Ctrl+C）
+3. 再次运行，输入 `/resume`
+4. 智能体加载出之前的对话
 
-Also try:
-- Create a `AGENT.md` file in the project root with some instructions
-- Ask the agent to "remember that I prefer dark themes" (it saves to memory)
-- Restart and check that the memory persists
+也可以试试：
+- 在项目根目录创建一个 `AGENT.md` 文件，写上一些说明
+- 让智能体“记住我偏好深色主题”（它会存进记忆）
+- 重启，确认记忆还在

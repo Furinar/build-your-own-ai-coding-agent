@@ -7,9 +7,9 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You are a coding assistant. Use list_files and search_files to find files before editing. Always read a file before editing it. Be concise.`;
+const SYSTEM_PROMPT = `你是一个编程助手。编辑前先用 list_files 和 search_files 找到相关文件。编辑前永远先读文件。保持简洁。`;
 
-// --- Permission types ---
+// --- 权限类型 ---
 type PermissionDecision = "allow" | "ask" | "deny";
 type PermissionMode = "default" | "plan" | "yolo";
 
@@ -22,9 +22,9 @@ interface PermissionRule {
 }
 
 const rules: PermissionRule[] = [
-  // Safe read-only commands are always allowed
+  // 安全的只读命令始终允许
   { toolName: "run_command", pattern: "^(ls|cat|echo|pwd|git status|git diff|git log)", decision: "allow" },
-  // Dangerous patterns are always denied
+  // 危险的命令模式始终拒绝
   { toolName: "run_command", pattern: "rm\\s+-rf\\s+/", decision: "deny" },
 ];
 
@@ -44,7 +44,7 @@ function getEffectiveDecision(toolDecision: PermissionDecision, mode: Permission
   return toolDecision;
 }
 
-// --- Tool interface (now with permissions) ---
+// --- 工具接口(现在带有权限) ---
 interface Tool {
   name: string;
   description: string;
@@ -69,13 +69,13 @@ function findActualString(fileContent: string, searchString: string): string | n
   return null;
 }
 
-// --- Tools with permission checks ---
+// --- 带权限检查的工具 ---
 
 const readFileTool: Tool = {
   name: "read_file",
-  description: "Read a file with line numbers.",
+  description: "读取文件,带行号。",
   inputSchema: z.object({ file_path: z.string() }),
-  checkPermissions() { return "allow"; }, // Reading is always safe
+  checkPermissions() { return "allow"; }, // 读取始终安全
   async call(input) {
     const filePath = input.file_path as string;
     try {
@@ -88,12 +88,12 @@ const readFileTool: Tool = {
 
 const editFileTool: Tool = {
   name: "edit_file",
-  description: "Edit a file by replacing old_string with new_string. Read first.",
+  description: "编辑文件,用 new_string 替换 old_string。请先读取文件。",
   inputSchema: z.object({
     file_path: z.string(), old_string: z.string(),
     new_string: z.string(), replace_all: z.boolean().optional(),
   }),
-  checkPermissions() { return "ask"; }, // Editing needs approval
+  checkPermissions() { return "ask"; }, // 编辑需要审批
   async call(input) {
     const { file_path, old_string, new_string, replace_all } = input as any;
     if (old_string === new_string) return "Error: strings identical.";
@@ -115,9 +115,9 @@ const editFileTool: Tool = {
 
 const writeFileTool: Tool = {
   name: "write_file",
-  description: "Create or overwrite a file.",
+  description: "创建或覆盖文件。",
   inputSchema: z.object({ file_path: z.string(), content: z.string() }),
-  checkPermissions() { return "ask"; }, // Writing needs approval
+  checkPermissions() { return "ask"; }, // 写入需要审批
   async call(input) {
     const filePath = input.file_path as string;
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -128,7 +128,7 @@ const writeFileTool: Tool = {
 
 const listFilesTool: Tool = {
   name: "list_files",
-  description: "List files recursively.",
+  description: "递归列出文件。",
   inputSchema: z.object({ directory: z.string().optional() }),
   checkPermissions() { return "allow"; },
   async call(input) {
@@ -150,7 +150,7 @@ const listFilesTool: Tool = {
 
 const searchFilesTool: Tool = {
   name: "search_files",
-  description: "Search for a regex pattern in files.",
+  description: "在文件中搜索正则表达式模式。",
   inputSchema: z.object({ pattern: z.string(), directory: z.string().optional() }),
   checkPermissions() { return "allow"; },
   async call(input) {
@@ -179,7 +179,7 @@ const searchFilesTool: Tool = {
 
 const runCommandTool: Tool = {
   name: "run_command",
-  description: "Run a shell command.",
+  description: "执行一条 shell 命令。",
   inputSchema: z.object({ command: z.string() }),
   checkPermissions(input) {
     const cmd = input.command as string;
@@ -225,22 +225,22 @@ function estimateTokens(messages: Anthropic.MessageParam[]): number {
   return Math.ceil(chars / 4);
 }
 
-// --- Permission dialog ---
+// --- 权限对话 ---
 async function askUserPermission(
   toolName: string,
   input: Record<string, unknown>,
   rl: readline.Interface
 ): Promise<boolean> {
   const inputStr = JSON.stringify(input, null, 2).slice(0, 200);
-  console.log(`\n  Permission required: ${toolName}`);
-  console.log(`  Input: ${inputStr}`);
+  console.log(`\n  需要权限: ${toolName}`);
+  console.log(`  输入: ${inputStr}`);
 
   return new Promise((resolve) => {
-    rl.question("  Allow? [y]es / [n]o / [a]lways > ", (answer) => {
+    rl.question("  允许? [y]是 / [n]否 / [a]始终 > ", (answer) => {
       const choice = answer.trim().toLowerCase();
       if (choice === "a" || choice === "always") {
         rules.push({ toolName, decision: "allow" });
-        console.log(`  Rule added: always allow ${toolName}\n`);
+        console.log(`  已添加规则: 始终允许 ${toolName}\n`);
         resolve(true);
       } else {
         resolve(choice === "y" || choice === "yes");
@@ -249,7 +249,7 @@ async function askUserPermission(
   });
 }
 
-// --- The agentic loop (with permissions) ---
+// --- 智能体循环(带权限) ---
 async function agentLoop(
   conversationHistory: Anthropic.MessageParam[],
   rl: readline.Interface
@@ -268,10 +268,10 @@ async function agentLoop(
     if (turns > maxTurns) return "[max turns reached]";
 
     const tokenEstimate = estimateTokens(conversationHistory);
-    console.log(`  [context] ~${tokenEstimate} tokens`);
+    console.log(`  [上下文] ~${tokenEstimate} tokens`);
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: apiTools,
@@ -305,13 +305,13 @@ async function agentLoop(
         continue;
       }
 
-      // --- Permission check ---
+      // --- 权限检查 ---
       const ruleDecision = checkRules(tool.name, toolUse.input as Record<string, unknown>);
       const toolDecision = ruleDecision ?? tool.checkPermissions(toolUse.input as Record<string, unknown>);
       const finalDecision = getEffectiveDecision(toolDecision, permissionMode);
 
       if (finalDecision === "deny") {
-        console.log(`  [denied] ${tool.name}`);
+        console.log(`  [已拒绝] ${tool.name}`);
         toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: "Permission denied.", is_error: true });
         continue;
       }
@@ -319,16 +319,16 @@ async function agentLoop(
       if (finalDecision === "ask") {
         const allowed = await askUserPermission(tool.name, toolUse.input as Record<string, unknown>, rl);
         if (!allowed) {
-          console.log(`  [rejected] ${tool.name}`);
+          console.log(`  [被用户拒绝] ${tool.name}`);
           toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: "Permission denied by user.", is_error: true });
           continue;
         }
       }
 
-      // Execute the tool
-      console.log(`  [tool] ${tool.name}(${JSON.stringify(toolUse.input).slice(0, 100)})`);
+      // 执行工具
+      console.log(`  [工具] ${tool.name}(${JSON.stringify(toolUse.input).slice(0, 100)})`);
       const result = await tool.call(parsed.data);
-      console.log(`  [result] ${result.slice(0, 150)}${result.length > 150 ? "..." : ""}`);
+      console.log(`  [结果] ${result.slice(0, 150)}${result.length > 150 ? "..." : ""}`);
       toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: result });
     }
 
@@ -341,17 +341,17 @@ async function main() {
   const conversationHistory: Anthropic.MessageParam[] = [];
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log(`Agent with permissions (mode: ${permissionMode}).`);
-  console.log("Reads are auto-allowed. Edits and commands ask for permission.");
-  console.log('Try: "Change the button color to red in sample-project"\n');
+  console.log(`带权限的智能体(模式: ${permissionMode})。`);
+  console.log("读取操作自动允许。编辑和命令会请求权限。");
+  console.log('试试: "把 sample-project 里按钮的颜色改成红色"\n');
 
   const ask = () => {
     rl.question("> ", async (input) => {
       const trimmed = input.trim();
       if (!trimmed) return ask();
-      if (trimmed === "/yolo") { permissionMode = "yolo"; console.log("Mode: yolo (allow all)\n"); return ask(); }
-      if (trimmed === "/plan") { permissionMode = "plan"; console.log("Mode: plan (read-only)\n"); return ask(); }
-      if (trimmed === "/default") { permissionMode = "default"; console.log("Mode: default\n"); return ask(); }
+      if (trimmed === "/yolo") { permissionMode = "yolo"; console.log("模式: yolo (全部允许)\n"); return ask(); }
+      if (trimmed === "/plan") { permissionMode = "plan"; console.log("模式: plan (只读)\n"); return ask(); }
+      if (trimmed === "/default") { permissionMode = "default"; console.log("模式: default\n"); return ask(); }
 
       conversationHistory.push({ role: "user", content: trimmed });
       console.log("");

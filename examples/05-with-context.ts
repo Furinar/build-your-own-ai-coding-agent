@@ -7,21 +7,21 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You are a coding assistant that helps users with software engineering tasks.
+const SYSTEM_PROMPT = `你是一个编程助手，帮助用户完成软件工程任务。
 
-# How to work
-- Use list_files and search_files to find relevant files before making changes.
-- Always read a file before editing it.
-- Use search_files to find code patterns across the project.
+# 如何工作
+- 在改动之前，用 list_files 和 search_files 找到相关文件。
+- 编辑文件之前一定要先读取它。
+- 用 search_files 在整个项目中查找代码模式。
 
-# How to edit files
-- Use edit_file for modifications. Provide enough context in old_string to be unique.
-- For new files, use write_file.
+# 如何编辑文件
+- 修改时使用 edit_file。在 old_string 中提供足够的上下文，以保证唯一。
+- 对于新文件，使用 write_file。
 
-# Communication
-- Be concise. Mention file paths and what changed.`;
+# 沟通
+- 保持简洁。说明文件路径以及改动了什么。`;
 
-// --- Tool interface ---
+// --- 工具接口 ---
 interface Tool {
   name: string;
   description: string;
@@ -40,11 +40,11 @@ function findActualString(fileContent: string, searchString: string): string | n
   return null;
 }
 
-// --- Tools (same as Chapter 4) ---
+// --- 工具（和第 4 章一样）---
 
 const readFileTool: Tool = {
   name: "read_file",
-  description: "Read a file's contents with line numbers. Always read a file before editing it.",
+  description: "读取一个文件的内容（带行号）。编辑文件之前一定要先读取它。",
   inputSchema: z.object({ file_path: z.string() }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -60,7 +60,7 @@ const readFileTool: Tool = {
 
 const editFileTool: Tool = {
   name: "edit_file",
-  description: "Edit a file by replacing old_string with new_string. Must be a unique match. Read first.",
+  description: "通过把 old_string 替换成 new_string 来编辑文件。必须是唯一匹配。先读取再编辑。",
   inputSchema: z.object({
     file_path: z.string(),
     old_string: z.string(),
@@ -101,7 +101,7 @@ const editFileTool: Tool = {
 
 const writeFileTool: Tool = {
   name: "write_file",
-  description: "Create or overwrite a file.",
+  description: "创建或覆盖一个文件。",
   inputSchema: z.object({ file_path: z.string(), content: z.string() }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -113,7 +113,7 @@ const writeFileTool: Tool = {
 
 const listFilesTool: Tool = {
   name: "list_files",
-  description: "List files recursively. Use to explore before reading.",
+  description: "递归列出文件。在读取之前用它来探索。",
   inputSchema: z.object({ directory: z.string().optional() }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -134,7 +134,7 @@ const listFilesTool: Tool = {
 
 const searchFilesTool: Tool = {
   name: "search_files",
-  description: "Search for a regex pattern in files. Returns matching lines.",
+  description: "在文件中搜索一个正则表达式。返回匹配的行。",
   inputSchema: z.object({ pattern: z.string(), directory: z.string().optional() }),
   async call(input) {
     const dir = (input.directory as string) || ".";
@@ -164,7 +164,7 @@ const searchFilesTool: Tool = {
 
 const runCommandTool: Tool = {
   name: "run_command",
-  description: "Run a shell command.",
+  description: "运行一个 shell 命令。",
   inputSchema: z.object({ command: z.string() }),
   async call(input) {
     try {
@@ -177,7 +177,7 @@ const runCommandTool: Tool = {
 
 const tools: Tool[] = [readFileTool, editFileTool, writeFileTool, listFilesTool, searchFilesTool, runCommandTool];
 
-// --- Zod to JSON Schema ---
+// --- Zod 转 JSON Schema ---
 function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   const shape = schema.shape;
   const properties: Record<string, unknown> = {};
@@ -193,9 +193,9 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- Token estimation ---
-// A rough estimate: ~4 characters per token on average.
-// This is not exact, but good enough for knowing when we are getting big.
+// --- token 估算 ---
+// 一个粗略估算：平均每个 token 约 4 个字符。
+// 这并不精确，但足以判断上下文什么时候变大了。
 function estimateTokens(messages: Anthropic.MessageParam[]): number {
   let chars = 0;
   for (const msg of messages) {
@@ -216,9 +216,9 @@ function estimateTokens(messages: Anthropic.MessageParam[]): number {
   return Math.ceil(chars / 4);
 }
 
-// --- Message normalization ---
-// Clean up messages before sending to the API.
-// For now, just filter empty messages and log the token count.
+// --- 消息归一化 ---
+// 在发送给 API 之前清理消息。
+// 目前只是过滤掉空消息，并打印 token 数量。
 function normalizeMessages(
   messages: Anthropic.MessageParam[]
 ): Anthropic.MessageParam[] {
@@ -228,7 +228,7 @@ function normalizeMessages(
   });
 }
 
-// --- The agentic loop ---
+// --- 智能体循环 ---
 async function agentLoop(
   conversationHistory: Anthropic.MessageParam[]
 ): Promise<string> {
@@ -245,13 +245,13 @@ async function agentLoop(
     turns++;
     if (turns > maxTurns) return "[max turns reached]";
 
-    // Normalize and estimate token count before sending
+    // 发送前先归一化并估算 token 数量
     const normalized = normalizeMessages(conversationHistory);
     const tokenEstimate = estimateTokens(normalized);
     console.log(`  [context] ~${tokenEstimate} tokens in ${normalized.length} messages`);
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: apiTools,
@@ -305,11 +305,11 @@ async function main() {
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log("Agent with context tracking. Watch the token count grow.");
-  console.log("Try a multi-turn conversation:");
-  console.log('  1. "What files are in sample-project?"');
-  console.log('  2. "Read the Button component"');
-  console.log('  3. "Change the color to red"  (no re-read needed)\n');
+  console.log("带上下文跟踪的智能体。观察 token 数量不断增长。");
+  console.log("试试一段多轮对话：");
+  console.log('  1. “sample-project 里有哪些文件？”');
+  console.log('  2. “读取 Button 组件”');
+  console.log('  3. “把颜色改成红色”（无需重新读取）\n');
 
   const ask = () => {
     rl.question("> ", async (input) => {

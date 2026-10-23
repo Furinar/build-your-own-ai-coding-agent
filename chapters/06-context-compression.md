@@ -1,16 +1,16 @@
-# Chapter 6: Context Compression
+# 第 6 章：上下文压缩
 
-## The problem
+## 问题
 
-A 50-turn conversation with an AI coding agent can easily reach 200,000 tokens. Every file read dumps thousands of tokens into the history. Every tool result stays there forever. And every API call sends the entire history.
+跟 AI 编程智能体进行一段 50 轮的对话，轻轻松松就能到 200,000 token。每读一个文件都会往历史里灌几千个 token。每个工具结果都永远留在那儿。而每次 API 调用又要把整段历史发过去。
 
-At some point, you hit the context window limit and the API call fails. Before that, you are paying for all those old tokens on every single call.
+到了某个节点，你会撞上上下文窗口上限，API 调用就失败了。在那之前，你每一次调用都在为那些陈旧的 token 付费。
 
-You need a way to shrink the conversation without losing the important parts.
+你需要一种办法，在不丢掉重要部分的前提下缩小对话。
 
-## The compression pipeline
+## 压缩流水线
 
-Production agents do not use a single compression strategy. They use layers, from cheapest to most expensive:
+生产级智能体不会只用一种压缩策略。它们是分层的，从最便宜到最贵：
 
 ```mermaid
 flowchart LR
@@ -20,18 +20,18 @@ flowchart LR
     D --> E[Send to API]
 ```
 
-Each layer runs before every API call. They are ordered by cost:
+每一层都在每次 API 调用之前运行。它们按成本排序：
 
-- **Cheap** means it just manipulates strings in memory. No API calls, no extra tokens, runs in milliseconds. Truncating a string or replacing old text with "[cleared]" is cheap.
-- **Expensive** means it makes an additional API call to the LLM, which costs tokens and takes seconds. Asking the model to summarize the conversation is expensive.
+- **便宜**指的是它只在内存里摆弄字符串。没有 API 调用，没有额外 token，毫秒级就跑完。截断一个字符串，或者把旧文本替换成“[已清除]”，这就是便宜。
+- **昂贵**指的是它会额外发一次 LLM 调用，要花 token，要花好几秒。让模型去总结对话，这就是昂贵。
 
-Cheap layers run first and handle most cases. Expensive layers only fire when the cheap ones are not enough.
+便宜的层先跑，处理掉大多数情况。昂贵的层只在便宜的层不够用时才启动。
 
-## Layer 1: Truncate large tool results
+## 第 1 层：截断大的工具结果
 
-The cheapest compression. Some tool results are huge. Reading a 5,000-line file dumps all of it into the conversation. But the model usually only needs the first part (for understanding the structure) or a specific section (for making an edit).
+最便宜的压缩。有些工具结果非常大。读一个 5,000 行的文件，会把它整个灌进对话。但模型通常只需要开头那部分（用来理解结构），或者某个特定片段（用来做修改）。
 
-The fix: cap tool results at a character limit. If a result exceeds the limit, keep the first chunk and add a note that it was truncated.
+解决办法：给工具结果设一个字符数上限。如果某个结果超了，就保留开头一段，再加一句说明，告诉它被截断了。
 
 ```typescript
 const MAX_RESULT_CHARS = 10_000;
@@ -43,18 +43,18 @@ function truncateResult(result: string): string {
   const truncated = result.slice(0, MAX_RESULT_CHARS);
   return (
     truncated +
-    `\n\n[Truncated: result was ${result.length} characters. ` +
-    `Showing first ${MAX_RESULT_CHARS}.]`
+    `\n\n[已截断：结果原有 ${result.length} 个字符。` +
+    `仅显示前 ${MAX_RESULT_CHARS} 个。]`
   );
 }
 ```
 
-You call this in the agentic loop, right where tool results are collected before pushing them into the conversation:
+你在智能体循环里调用它，就在工具结果被收集、准备推入对话之前：
 
 ```typescript
-// In the agentic loop, after executing a tool:
+// 在智能体循环里，执行完一个工具之后：
 const result = await tool.call(parsed.data);
-const truncatedResult = truncateResult(result);  // <-- apply before storing
+const truncatedResult = truncateResult(result);  // <-- 存储前先应用
 
 toolResults.push({
   type: "tool_result",
@@ -63,46 +63,46 @@ toolResults.push({
 });
 ```
 
-Here is what this looks like in practice. The model reads a large file:
+实际跑起来是这样的。模型读了一个大文件：
 
 ```
-Before truncation (25,000 characters):
+截断前（25,000 个字符）：
 
   1   import express from "express";
   2   import cors from "cors";
   3   ...
-  ... (500 more lines)
+  ... (还有 500 行)
   502 export default app;
 
-After truncation (10,000 characters):
+截断后（10,000 个字符）：
 
   1   import express from "express";
   2   import cors from "cors";
   3   ...
-  ... (first ~200 lines)
+  ... (前 ~200 行)
 
-  [Truncated: result was 25,000 characters. Showing first 10,000.]
+  [已截断：结果原有 25,000 个字符。仅显示前 10,000 个。]
 ```
 
-The model sees enough of the file to understand its structure (imports, exports, main patterns) without the full 500 lines eating up context. If it needs a specific section later, it can read the file again with an offset.
+模型看到了文件的一部分，足以理解它的结构（imports、exports、主要模式），而不用让完整的 500 行把上下文吃光。如果它之后需要某个特定片段，可以带一个 offset 再读一次文件。
 
-**When it fires:** Every turn, on every tool result.
+**何时触发：** 每一轮，对每一个工具结果。
 
-**What it costs:** Nothing. Just string slicing.
+**成本是多少：** 没有成本。就是切切字符串。
 
-## Layer 2: Clear old tool results
+## 第 2 层：清除旧的工具结果
 
-Tool results from 20 turns ago are rarely useful. The model read a file, used the information, and moved on. Keeping the full file contents in the conversation is waste.
+20 轮之前的工具结果，很少还有用。模型读了个文件，用过那些信息，然后就往下走了。把完整文件内容留在对话里纯属浪费。
 
-The fix: replace old tool results with a short stub.
+解决办法：把旧的工具结果替换成一小段占位文本。
 
 ```typescript
-const KEEP_RECENT = 6; // Keep the last N tool results intact
+const KEEP_RECENT = 6; // 保留最近 N 个工具结果不动
 
 function clearOldResults(
   messages: Anthropic.MessageParam[]
 ): Anthropic.MessageParam[] {
-  // Find all tool result messages and their positions
+  // 找出所有工具结果消息及其位置
   const toolResultPositions: number[] = [];
   messages.forEach((msg, i) => {
     if (typeof msg.content !== "string" && Array.isArray(msg.content)) {
@@ -113,18 +113,18 @@ function clearOldResults(
     }
   });
 
-  // Keep the most recent ones, clear the rest
+  // 保留最近的那些，其余清除
   const toClear = toolResultPositions.slice(0, -KEEP_RECENT);
 
   return messages.map((msg, i) => {
     if (!toClear.includes(i)) return msg;
 
-    // Replace tool result content with a stub
+    // 用占位文本替换工具结果内容
     const content = (msg.content as any[]).map((block: any) => {
       if (block.type === "tool_result") {
         return {
           ...block,
-          content: "[Previous tool result cleared to save context]",
+          content: "[先前的工具结果已清除以节省上下文]",
         };
       }
       return block;
@@ -135,52 +135,52 @@ function clearOldResults(
 }
 ```
 
-Here is what this looks like. Say the conversation has 10 tool results and we keep the last 6:
+来看看实际效果。假设对话里有 10 个工具结果，我们保留最近的 6 个：
 
 ```
-Before clearing (10 tool results, keeping last 6):
+清除前（10 个工具结果，保留最近 6 个）：
 
-  list_files    → "src/App.tsx\nsrc/Button..."       (500 chars)    ← CLEAR
-  read_file     → "1  import React from...'         (20,000 chars)  ← CLEAR
-  read_file     → "1  export function Button..."    (5,000 chars)   ← CLEAR
-  search_files  → "src/App.tsx:3: import..."        (2,000 chars)   ← CLEAR
-  edit_file     → "Edited src/App.tsx"              (20 chars)      ← keep
-  read_file     → "1  import express from..."       (12,000 chars)  ← keep
-  search_files  → "src/routes.ts:12: app.get..."    (1,500 chars)   ← keep
-  read_file     → "1  const router = ..."           (8,000 chars)   ← keep
-  edit_file     → "Edited src/routes.ts"            (22 chars)      ← keep
-  run_command   → "Tests passed"                    (15 chars)      ← keep
+  list_files    → "src/App.tsx\nsrc/Button..."       (500 字符)      ← 清除
+  read_file     → "1  import React from...'         (20,000 字符)   ← 清除
+  read_file     → "1  export function Button..."    (5,000 字符)    ← 清除
+  search_files  → "src/App.tsx:3: import..."        (2,000 字符)    ← 清除
+  edit_file     → "Edited src/App.tsx"              (20 字符)       ← 保留
+  read_file     → "1  import express from..."       (12,000 字符)   ← 保留
+  search_files  → "src/routes.ts:12: app.get..."    (1,500 字符)    ← 保留
+  read_file     → "1  const router = ..."           (8,000 字符)    ← 保留
+  edit_file     → "Edited src/routes.ts"            (22 字符)       ← 保留
+  run_command   → "Tests passed"                    (15 字符)       ← 保留
 
-After clearing:
+清除后：
 
-  list_files    → "[Cleared]"                                       ← was 500
-  read_file     → "[Cleared]"                                       ← was 20,000
-  read_file     → "[Cleared]"                                       ← was 5,000
-  search_files  → "[Cleared]"                                       ← was 2,000
-  edit_file     → "Edited src/App.tsx"              (unchanged)
-  read_file     → "1  import express from..."       (unchanged)
-  ... (rest unchanged)
+  list_files    → "[已清除]"                                        ← 原为 500
+  read_file     → "[已清除]"                                        ← 原为 20,000
+  read_file     → "[已清除]"                                        ← 原为 5,000
+  search_files  → "[已清除]"                                        ← 原为 2,000
+  edit_file     → "Edited src/App.tsx"              (不变)
+  read_file     → "1  import express from..."       (不变)
+  ... (其余不变)
 
-  Freed: ~27,500 characters from 4 old results
+  释放：约 27,500 个字符，来自 4 个旧结果
 ```
 
-The old file contents (27,500 characters) are gone. But the tool calls in the assistant messages still say "I called read_file on src/App.tsx." The model can see *what* it did, just not the full result. If it needs that file again, it can re-read it.
+旧的文件内容（27,500 个字符）没了。但助手消息里的那些工具调用还在，还写着“我对 src/App.tsx 调用了 read_file”。模型能看到它*做过什么*，只是看不到完整结果而已。如果它还需要那个文件，可以重新读一遍。
 
-This is more aggressive than truncation. Old tool results are completely replaced.
+这比截断更激进。旧的工具结果被整个替换掉了。
 
-**When it fires:** Every turn, before sending to the API.
+**何时触发：** 每一轮，在发给 API 之前。
 
-**What it costs:** Nothing. Just message rewriting.
+**成本是多少：** 没有成本。就是重写消息。
 
-## Layer 3: Summarize the conversation (autocompact)
+## 第 3 层：总结对话（autocompact）
 
-When the conversation is still too long after layers 1 and 2, you need the big gun: ask the model to summarize the conversation.
+当对话过了第 1 层和第 2 层之后还是太长，你就得掏出重武器了：让模型来总结对话。
 
-This works by making a separate API call with the current conversation and a prompt like "summarize what has happened so far." Then you replace all the old messages with that summary.
+它的做法是：另起一次 API 调用，带上当前对话，加一句类似“总结一下到目前为止发生了什么”的提示词。然后用这段摘要替换掉所有旧消息。
 
 ```typescript
-const CONTEXT_WINDOW = 200_000; // Model's context limit in tokens
-const COMPACT_THRESHOLD = 0.8;  // Compact when we hit 80% of the limit
+const CONTEXT_WINDOW = 200_000; // 模型的上下文上限，以 token 计
+const COMPACT_THRESHOLD = 0.8;  // 到达上限的 80% 时进行压缩
 
 async function autoCompact(
   messages: Anthropic.MessageParam[],
@@ -189,22 +189,22 @@ async function autoCompact(
   messages: Anthropic.MessageParam[];
   wasCompacted: boolean;
 }> {
-  // Only compact if we are approaching the limit
+  // 只有在接近上限时才压缩
   if (tokenEstimate < CONTEXT_WINDOW * COMPACT_THRESHOLD) {
     return { messages, wasCompacted: false };
   }
 
-  console.log("  [compact] Context is large, summarizing conversation...");
+  console.log("  [compact] 上下文太大，正在总结对话……");
 
-  // Ask the model to summarize
+  // 让模型做总结
   const summaryResponse = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 2048,
     system:
-      "Summarize this conversation between a user and a coding assistant. " +
-      "Write in third person (say 'the user asked' and 'the assistant edited', not 'I'). " +
-      "Preserve: file paths mentioned, code changes made, current task state, " +
-      "and any decisions or preferences expressed. Be concise but complete.",
+      "总结这段用户与编程助手之间的对话。" +
+      "用第三人称写（说“用户要求”“助手编辑了”，而不是“我”）。" +
+      "保留：提到的文件路径、做过的代码改动、当前任务状态，" +
+      "以及表达过的任何决定或偏好。简洁但完整。",
     messages: messages,
   });
 
@@ -213,8 +213,8 @@ async function autoCompact(
     .map((b) => b.text)
     .join("\n");
 
-  // Replace old messages with the summary
-  // Keep the most recent messages intact (they are likely still relevant)
+  // 用摘要替换旧消息
+  // 保留最近的消息不动（它们很可能仍然相关）
   const keepRecent = 4;
   const recentMessages = messages.slice(-keepRecent);
 
@@ -222,12 +222,12 @@ async function autoCompact(
     {
       role: "user",
       content:
-        `[Conversation summary]\n${summaryText}\n\n` +
-        `[The conversation continues from here.]`,
+        `[对话摘要]\n${summaryText}\n\n` +
+        `[对话从这里继续。]`,
     },
     {
       role: "assistant",
-      content: "I understand the context. I will continue from where we left off.",
+      content: "我已了解上下文。我会从我们停下的地方继续。",
     },
     ...recentMessages,
   ];
@@ -236,97 +236,97 @@ async function autoCompact(
 }
 ```
 
-After compaction, the conversation looks like:
+压缩之后，对话看上去是这样的：
 
 ```
-[user]:      "[Conversation summary]
-              The user asked to build a login page. The assistant read
-              src/pages/LoginPage.tsx and src/auth/useAuth.ts, then edited
-              LoginPage.tsx to add a form. The current task is adding
-              validation to the form fields."
-[assistant]: "I understand the context. I will continue from where we left off."
-[user]:      (recent message 1)
-[assistant]: (recent message 2)
-[user]:      (most recent message)
+[user]:      "[对话摘要]
+              用户要求做一个登录页。助手读了
+              src/pages/LoginPage.tsx 和 src/auth/useAuth.ts，然后编辑了
+              LoginPage.tsx 来加一个表单。当前任务是给表单字段
+              加校验。"
+[assistant]: "我已了解上下文。我会从我们停下的地方继续。"
+[user]:      (最近的消息 1)
+[assistant]: (最近的消息 2)
+[user]:      (最新的消息)
 ```
 
-Why is the summary a `user` message? Because the API requires conversations to start with a `user` message. After compaction, the summary is the first message, so it has to be `role: "user"`. That is why we write it in third person ("the user asked", "the assistant read") instead of first person. It is a neutral recap, not someone talking.
+为什么摘要是一条 `user` 消息？因为 API 要求对话必须以一条 `user` 消息开头。压缩之后，摘要是第一条消息，所以它必须是 `role: "user"`。这也是为什么我们用第三人称来写它（“用户要求”“助手读取了”）而不是第一人称。它是一段中立的回顾，不是某个人在说话。
 
-The old messages are gone. Replaced by a summary that preserves the important facts: what files were touched, what changes were made, and what the current task is.
+旧消息没了，被一段摘要取代，而这段摘要保留了重要的事实：动过哪些文件、做了哪些改动、当前任务是什么。
 
-**When it fires:** Only when the token count exceeds the threshold (80% of context window).
+**何时触发：** 只有当 token 数超过阈值（上下文窗口的 80%）时。
 
-**What it costs:** One extra API call for the summarization. This is the expensive option, which is why we use cheaper layers first.
+**成本是多少：** 为了做总结而多出一次 API 调用。这是最贵的选项，所以我们才先用更便宜的层。
 
-## The compact boundary
+## 压缩边界
 
-After compaction, the messages array has a summary at the front and recent messages at the back. But the conversation keeps going. New messages pile up. Eventually you need to compact again.
+压缩之后，messages 数组前面是一段摘要，后面是最近的消息。但对话还在继续。新消息不断堆积。迟早你又得再压缩一次。
 
-The question is: which messages do you summarize the second time? You do not want to re-summarize the summary. That would lose information with each cycle (a summary of a summary of a summary gets worse every time).
+问题在于：第二次该总结哪些消息？你不会想去重新总结那段摘要。那样每一轮都会丢信息（摘要的摘要的摘要，一次比一次糟）。
 
-The "compact boundary" is a marker that says "everything before this point is already summarized." When it is time to compact again, you only summarize messages after the boundary.
+“压缩边界”是一个标记，它说“这个点之前的所有东西都已经总结过了”。到了该再次压缩的时候，你只总结边界之后的消息。
 
-Here is what the messages array looks like over time:
+来看看 messages 数组随时间的变化：
 
 ```
-After first compaction:
+第一次压缩后：
 ┌──────────────────────────────────────────────────┐
-│ [summary of turns 1-20]          ← boundary here │
-│ [assistant] "I understand."                      │
-│ [user] "Now add a delete button"                 │
-│ [assistant] [tool] read_file(...)                │
-│ [tool_result] (file contents)                    │
-│ [assistant] [tool] edit_file(...)                │
-│ [tool_result] "Edited"                           │
-│ ... 15 more turns ...                            │
+│ [第 1-20 轮的摘要]               ← 边界在这里     │
+│ [assistant] "我已了解。"                          │
+│ [user] "现在加一个删除按钮"                       │
+│ [assistant] [tool] read_file(...)                 │
+│ [tool_result] (文件内容)                          │
+│ [assistant] [tool] edit_file(...)                 │
+│ [tool_result] "已编辑"                            │
+│ ... 还有 15 轮 ...                                │
 └──────────────────────────────────────────────────┘
 
-After second compaction:
+第二次压缩后：
 ┌──────────────────────────────────────────────────┐
-│ [summary of turns 1-20]                          │
-│ [summary of turns 21-35]         ← boundary here │
-│ [assistant] "I understand."                      │
-│ [user] "One more thing..."                       │
-│ ... recent turns ...                             │
+│ [第 1-20 轮的摘要]                                │
+│ [第 21-35 轮的摘要]              ← 边界在这里     │
+│ [assistant] "我已了解。"                          │
+│ [user] "还有一件事……"                            │
+│ ... 最近的轮次 ...                                │
 └──────────────────────────────────────────────────┘
 ```
 
-The first summary stays untouched. The second compaction only summarized the new turns (21-35). This way, information degrades gracefully instead of collapsing into a single increasingly lossy summary.
+第一段摘要保持原样不动。第二次压缩只总结了新的轮次（21-35）。这样，信息是平缓地退化，而不是坍缩成一段越来越失真的摘要。
 
-In code:
+写成代码：
 
 ```typescript
-// Track where the last compaction ended
+// 记录上一次压缩结束的位置
 let compactBoundaryIndex = 0;
 
-// After compaction:
-compactBoundaryIndex = 2; // Summary + "I understand" message
+// 压缩之后：
+compactBoundaryIndex = 2; // 摘要 + “我已了解”那条消息
 
-// Next time we compact, only summarize messages after the boundary
+// 下次压缩时，只总结边界之后的消息
 const messagesToSummarize = messages.slice(compactBoundaryIndex);
 ```
 
-## Putting it all together
+## 把它们串起来
 
-The compression pipeline runs before every API call:
+压缩流水线在每次 API 调用之前运行：
 
 ```typescript
 async function compressMessages(
   messages: Anthropic.MessageParam[]
 ): Promise<Anthropic.MessageParam[]> {
-  // Layer 1: Truncation already happened when results were created
+  // 第 1 层：截断在结果生成时就已经做过了
 
-  // Layer 2: Clear old tool results
+  // 第 2 层：清除旧的工具结果
   let compressed = clearOldResults(messages);
 
-  // Layer 3: Autocompact if still too large
+  // 第 3 层：如果还是太大，就自动压缩
   const tokenEstimate = estimateTokens(compressed);
   const { messages: compacted } = await autoCompact(compressed, tokenEstimate);
 
   return compacted;
 }
 
-// In the agentic loop:
+// 在智能体循环里：
 while (true) {
   const compressed = await compressMessages(conversationHistory);
   const response = await client.messages.create({
@@ -337,36 +337,36 @@ while (true) {
 }
 ```
 
-Notice that we compress a copy of the messages. The original `conversationHistory` stays intact. We only compress when preparing the API call. This way, if we need to re-compress differently later, we still have the full history.
+注意我们压缩的是消息的一个副本。原始的 `conversationHistory` 保持完整。我们只在准备 API 调用时才做压缩。这样，如果之后需要换一种方式重新压缩，我们手里还有完整历史。
 
-In practice, production agents do modify the conversation in place after compaction. Once a summary replaces old messages, the originals are gone. This saves memory but means you cannot undo it.
+实践中，生产级智能体确实会在压缩后就地修改对话。一旦摘要替换了旧消息，原件就没了。这省内存，但也意味着你撤销不了。
 
-## How much does each layer save?
+## 每一层能省多少？
 
-| Layer | Tokens saved | Cost | When it fires |
+| 层 | 节省的 token | 成本 | 何时触发 |
 |---|---|---|---|
-| Truncate results | 10-50% per large result | Free | Every tool result |
-| Clear old results | 30-60% of total context | Free | Every turn |
-| Autocompact | 70-90% of total context | 1 extra API call | At 80% of limit |
+| 截断结果 | 每个大结果省 10-50% | 免费 | 每个工具结果 |
+| 清除旧结果 | 总上下文的 30-60% | 免费 | 每一轮 |
+| 自动压缩 | 总上下文的 70-90% | 多一次 API 调用 | 到达上限的 80% 时 |
 
-Layer 1 prevents individual results from being too large. Layer 2 steadily shrinks the history as it grows. Layer 3 is the reset button when everything else is not enough.
+第 1 层防止单个结果过大。第 2 层随着历史增长而稳步缩小它。第 3 层是其他办法都不够用时的重置按钮。
 
-These three layers cover the core concepts. Production agents often have more. For example, they might drop middle turns entirely while keeping the first and last few (snipping), or collapse groups of related messages into summaries without re-summarizing the whole conversation. But truncation, clearing, and summarization are the foundation that everything else builds on.
+这三层覆盖了核心概念。生产级智能体往往还有更多。比如，它们可能整段丢掉中间的轮次，只保留开头和结尾的几轮（snipping），或者把一组相关消息合并成摘要，而不用重新总结整段对话。但截断、清除和总结是一切其他做法赖以建立的地基。
 
-## What is still missing
+## 还缺什么
 
-Our agent runs anything the model asks it to. `rm -rf /`? Sure. `git push --force`? Why not. In the next chapter, we add a permission system that asks the user before running dangerous operations.
+我们的智能体模型让它干啥它就干啥。`rm -rf /`？没问题。`git push --force`？为什么不呢。下一章，我们会加一套权限系统，在运行危险操作之前先征询用户。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:06
 ```
 
-**Heads up:** This example has a low compact threshold (8,000 tokens) for demo purposes. A longer conversation with bigger files will trigger all three layers. But even short conversations cost more than earlier examples because of context re-sending. Expect to spend $0.20-0.50 if you have a long session.
+**提个醒：** 为了演示，这个例子把压缩阈值设得很低（8,000 token）。一段更长、文件更大的对话会把三层全触发。但即便是短对话，由于上下文反复发送，花费也比前面的例子高。如果你聊得久一点，预计会花 $0.20-0.50。
 
-Watch the `[context]` log as you chat. You will see token counts go up as you read files, then drop when Layer 2 (clearing) kicks in. That drop is old tool results being replaced with "[Cleared]".
+聊天时留意 `[context]` 日志。你会看到读文件时 token 数往上走，然后在第 2 层（清除）启动时掉下来。那次下跌就是旧的工具结果被替换成了“[已清除]”。
 
-To trigger Layer 3 (the `[compact] Summarizing conversation...` log), you need the token count to exceed 8,000. With the small sample project, this takes many turns. Try asking the agent to read the example files in `examples/` instead, since those are much larger.
+想触发第 3 层（也就是 `[compact] Summarizing conversation...` 日志），你需要让 token 数超过 8,000。用那个很小的示例项目，得聊很多轮才行。可以改为让智能体去读 `examples/` 里的示例文件，那些大得多。
 
-If you only see token counts going down without the `[compact]` log, that is Layer 2 working silently. Layer 3 only fires when Layer 2 is not enough.
+如果你只看到 token 数在往下掉，却没有 `[compact]` 日志，那就是第 2 层在默默工作。第 3 层只在第 2 层不够用时才触发。

@@ -1,14 +1,14 @@
-# Chapter 9: Streaming
+# 第 9 章：流式输出
 
-## The problem
+## 问题
 
-Without streaming, the user sends a message and stares at a blank screen. The model might take 5-10 seconds to generate a response. If it calls a tool, the model needs to generate the full tool input before anything happens. Then the tool executes. Then the model generates more text. The user sees nothing until everything is done.
+没有流式输出时，用户发完消息就只能盯着一块空屏幕。模型可能要花 5-10 秒才能生成回复。如果它要调用工具，模型得先把完整的工具输入生成出来，然后才会有动静。接着工具执行。接着模型再生成更多文本。在这一切结束之前，用户什么都看不到。
 
-Streaming fixes this. Text appears character by character as the model generates it. The user knows the agent is working. They can start reading before the response is complete.
+流式输出解决了这个问题。文本随着模型生成一个字一个字地冒出来。用户知道智能体在干活。他们可以在回复还没完成时就开始读。
 
-## How streaming works
+## 流式输出是怎么工作的
 
-Instead of `client.messages.create()` which returns the complete response, we use `client.messages.stream()` which returns events as they happen:
+我们不用返回完整回复的 `client.messages.create()`，而是用 `client.messages.stream()`，它随着事件发生而逐个返回它们：
 
 ```typescript
 const stream = client.messages.stream({
@@ -19,7 +19,7 @@ const stream = client.messages.stream({
 });
 ```
 
-The stream emits events in this order:
+这个流会按如下顺序发出事件：
 
 ```mermaid
 sequenceDiagram
@@ -42,20 +42,20 @@ sequenceDiagram
     API->>Agent: message_stop
 ```
 
-## The event types
+## 事件类型
 
-| Event | What it means |
+| 事件 | 含义 |
 |---|---|
-| `message_start` | The response is starting. Contains metadata. |
-| `content_block_start` | A new content block is starting (text or tool_use). |
-| `content_block_delta` | A chunk of content. For text: a few words. For tool input: a piece of JSON. |
-| `content_block_stop` | The current content block is complete. |
-| `message_delta` | Final metadata like `stop_reason` and token usage. |
-| `message_stop` | The response is done. |
+| `message_start` | 回复开始了。包含元数据。 |
+| `content_block_start` | 一个新的内容块开始了（text 或 tool_use）。 |
+| `content_block_delta` | 一小块内容。对文本来说：几个词。对工具输入来说：一段 JSON。 |
+| `content_block_stop` | 当前内容块结束了。 |
+| `message_delta` | 收尾的元数据，比如 `stop_reason` 和 token 用量。 |
+| `message_stop` | 回复完成了。 |
 
-## Streaming text
+## 流式输出文本
 
-Text deltas are simple. Each `content_block_delta` event with `type: "text_delta"` carries a small piece of text. Print it immediately:
+文本增量很简单。每个 `type: "text_delta"` 的 `content_block_delta` 事件都带着一小段文本。立刻把它打印出来：
 
 ```typescript
 for await (const event of stream) {
@@ -63,16 +63,16 @@ for await (const event of stream) {
     event.type === "content_block_delta" &&
     event.delta.type === "text_delta"
   ) {
-    process.stdout.write(event.delta.text); // Print without newline
+    process.stdout.write(event.delta.text); // 不带换行地打印
   }
 }
 ```
 
-The user sees text appearing word by word. This feels much faster than waiting for the complete response, even though the total time is the same.
+用户会看到文本一个词一个词地冒出来。即便总耗时一样，这也比干等完整回复感觉快得多。
 
-## Streaming tool inputs
+## 流式输出工具输入
 
-Tool inputs are trickier. The model generates the tool's JSON input incrementally. Each `input_json_delta` event carries a piece of the JSON string:
+工具输入要棘手一些。模型是逐步生成工具的 JSON 输入的。每个 `input_json_delta` 事件都带着 JSON 字符串的一小片：
 
 ```
 Delta 1: '{"file'
@@ -81,31 +81,31 @@ Delta 3: '"src/'
 Delta 4: 'Button.tsx"}'
 ```
 
-You cannot parse incomplete JSON. So you buffer the deltas and parse when the block is complete:
+不完整的 JSON 是没法解析的。所以你把这些增量缓冲起来，等块完整了再解析：
 
 ```typescript
 let toolInputBuffer = "";
 
 for await (const event of stream) {
   if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
-    toolInputBuffer = "";  // Reset buffer for new tool
+    toolInputBuffer = "";  // 为新工具重置缓冲区
   }
 
   if (event.type === "content_block_delta" && event.delta.type === "input_json_delta") {
-    toolInputBuffer += event.delta.partial_json;  // Buffer the pieces
+    toolInputBuffer += event.delta.partial_json;  // 缓冲这些片段
   }
 
   if (event.type === "content_block_stop") {
-    // Now we can parse the complete JSON
+    // 现在可以解析完整的 JSON 了
     const input = toolInputBuffer ? JSON.parse(toolInputBuffer) : {};
-    // Execute the tool with the parsed input
+    // 用解析出的输入执行工具
   }
 }
 ```
 
-## Rewriting the loop for streaming
+## 为流式输出重写循环
 
-The agentic loop changes from `create()` to `stream()`. We need to accumulate the full response (for conversation history) while also streaming text to the user:
+智能体循环从 `create()` 改成 `stream()`。我们需要把完整回复累积起来（用于对话历史），同时又把文本流式地推给用户：
 
 ```typescript
 async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
@@ -118,7 +118,7 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
       messages,
     });
 
-    // Accumulate the complete response for conversation history
+    // 为对话历史累积完整回复
     const contentBlocks: Anthropic.ContentBlock[] = [];
     let currentToolInput = "";
     let currentToolId = "";
@@ -138,9 +138,9 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
 
         case "content_block_delta":
           if (event.delta.type === "text_delta") {
-            // Stream text to the user immediately
+            // 立刻把文本流式推给用户
             process.stdout.write(event.delta.text);
-            // Also accumulate for history
+            // 同时为历史累积
             const lastBlock = contentBlocks[contentBlocks.length - 1];
             if (lastBlock?.type === "text") {
               lastBlock.text += event.delta.text;
@@ -165,10 +165,10 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
       }
     }
 
-    // Add complete response to history
+    // 把完整回复加进历史
     messages.push({ role: "assistant", content: contentBlocks });
 
-    // Check for tool use (same as before)
+    // 检查是否有工具调用（跟之前一样）
     const toolBlocks = contentBlocks.filter(b => b.type === "tool_use");
     if (toolBlocks.length === 0) {
       return contentBlocks
@@ -176,90 +176,90 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
         .map(b => b.text).join("\n");
     }
 
-    // Execute tools and continue (same as before)
+    // 执行工具并继续（跟之前一样）
     // ...
   }
 }
 ```
 
-The key change is in the inner loop. We iterate over stream events instead of waiting for a complete response. Text is printed as it arrives. Tool inputs are buffered until complete.
+关键改动在内层循环。我们遍历流事件，而不是等一个完整回复。文本一到就打印。工具输入则缓冲到完整为止。
 
-## What the user sees
+## 用户看到的是什么
 
-Without streaming:
+没有流式输出时：
 ```
-> What does the Button component do?
-(10 second pause...)
-The Button component accepts a label and onClick handler...
+> Button 组件是干什么的？
+(停顿 10 秒……)
+Button 组件接受一个 label 和一个 onClick 处理函数……
 ```
 
-With streaming:
+有流式输出时：
 ```
-> What does the Button component do?
+> Button 组件是干什么的？
   [tool] read_file({"file_path":"sample-project/src/components/Button.tsx"})
   [result] 1  interface ButtonProps { ...
-The| Button| component| accepts| a| label| and| onClick| handler|...
+Button| 组件| 接受| 一个| label| 和| 一个| onClick| 处理函数|……
 ```
 
-Each `|` represents where a new chunk appeared. The user sees the response building up in real time.
+每个 `|` 代表一小块新内容冒出来的位置。用户看到回复实时地一点点搭起来。
 
-## Using the SDK helper
+## 使用 SDK 的辅助工具
 
-Most LLM SDKs provide helpers for streaming. For example, the Anthropic SDK has a `finalMessage()` helper to get the complete response after streaming:
+大多数 LLM SDK 都提供了流式输出的辅助工具。比如，Anthropic SDK 有一个 `finalMessage()` 辅助方法，能在流式输出结束后拿到完整回复：
 
 ```typescript
 const stream = client.messages.stream({ ... });
 
-// Stream text to the user
+// 把文本流式推给用户
 stream.on("text", (text) => {
   process.stdout.write(text);
 });
 
-// Get the complete message when done
+// 结束时拿到完整消息
 const finalMessage = await stream.finalMessage();
 ```
 
-This is easier for simple cases. For our agentic loop, we need more control (to detect tool_use blocks during streaming), so we use the raw event approach.
+对简单场景来说这样更省事。但对我们的智能体循环，我们需要更多控制（要在流式输出过程中检测 tool_use 块），所以才用原始事件那套做法。
 
-## Streaming thinking blocks
+## 流式输出思考块
 
-Many LLMs now support "thinking" or "reasoning" where the model shows its thought process before responding. When enabled, the model produces a `thinking` content block before the `text` or `tool_use` blocks.
+现在许多 LLM 都支持“思考”或“推理”，也就是模型在回复之前把它的思考过程展示出来。开启后，模型会在 `text` 或 `tool_use` 块之前产出一个 `thinking` 内容块。
 
-Thinking blocks stream the same way as text, just with a different delta type:
+思考块的流式方式跟文本一样，只是 delta 类型不同：
 
-- `content_block_start` with `type: "thinking"` signals a thinking block
-- `content_block_delta` with `type: "thinking_delta"` carries chunks of the model's reasoning
-- `content_block_stop` ends the thinking block
+- `type: "thinking"` 的 `content_block_start` 表示一个思考块开始
+- `type: "thinking_delta"` 的 `content_block_delta` 带着模型推理的一小块块
+- `content_block_stop` 结束这个思考块
 
 ```typescript
 case "content_block_start":
   if (event.content_block.type === "thinking") {
-    // A thinking block is starting
-    console.log("  [thinking...]");
+    // 一个思考块开始了
+    console.log("  [思考中……]");
   }
   break;
 
 case "content_block_delta":
   if (event.delta.type === "thinking_delta") {
-    // The model is reasoning. You can show this or hide it.
-    // Some agents show a spinner, some show the full thought process.
+    // 模型在推理。你可以展示它，也可以藏起来。
+    // 有的智能体显示一个转圈动画，有的把完整思考过程亮出来。
     process.stdout.write(event.delta.thinking);
   }
   break;
 ```
 
-Whether to show thinking to the user is a design choice. Some agents display it in a collapsible section. Some show a spinner with "Thinking..." and hide the content. Some skip it entirely. The thinking block does not need to go into the conversation history for the agentic loop to work. It is the `text` and `tool_use` blocks that matter.
+要不要把思考展示给用户，是一个设计选择。有的智能体把它放在一个可折叠的区块里。有的显示一个带着“思考中……”的转圈动画，把内容藏起来。有的干脆跳过。智能体循环要正常工作，思考块并不需要进对话历史。真正要紧的是 `text` 和 `tool_use` 块。
 
-One thing to note: some providers also have "redacted thinking" blocks where the model thought about something but the content is hidden from you. You get a block with `type: "redacted_thinking"` but no actual text. Just acknowledge it and move on.
+有一点要注意：有些提供方还有“脱敏思考”块，也就是模型思考过某件事，但内容对你是隐藏的。你会拿到一个 `type: "redacted_thinking"` 的块，却没有实际文本。认一下它，然后往下走就行。
 
-## What is still missing
+## 还缺什么
 
-When the model calls 3 tools at once (like reading 3 files), we execute them one at a time. But Read is a safe, read-only operation. We could run all 3 in parallel and save time. That is the topic of the next chapter.
+当模型一次调用 3 个工具时（比如读 3 个文件），我们是一个一个执行的。但 Read 是一个安全的只读操作。我们完全可以把这 3 个并行跑，省点时间。这就是下一章的主题。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:09
 ```
 
-Watch how text appears incrementally instead of all at once. Compare the experience with earlier examples.
+留意文本是如何逐步冒出来、而不是一下子全出来的。把这个体验跟前面的例子比一比。

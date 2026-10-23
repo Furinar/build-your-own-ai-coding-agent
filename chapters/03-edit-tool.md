@@ -1,27 +1,27 @@
-# Chapter 3: The Edit Tool
+# 第 3 章：编辑工具
 
-## The problem
+## 问题所在
 
-The model can read files now. But how does it edit them?
+模型现在能读文件了。但它怎么编辑文件呢？
 
-You might expect something complex. Maybe it parses the code into an AST (abstract syntax tree) and manipulates nodes. Maybe it uses a diff algorithm. Maybe it works with line numbers and inserts or deletes specific lines.
+你可能以为会是什么复杂的东西。也许它把代码解析成 AST（抽象语法树）然后操作节点，也许它用某种 diff 算法，也许它靠行号去插入或删除特定的行。
 
-It does none of that. It uses `string.replace()`. That is the whole thing.
+这些它都不干。它用的是 `string.replace()`。整个事情就这么点。
 
-## Walkthrough: "Change the button color to red"
+## 走一遍："把按钮颜色改成红色"
 
-The user types: "Change the button color to red in the sample project."
+用户输入："把示例项目里的按钮颜色改成红色。"
 
-Here is what happens:
+过程是这样的：
 
 ```
-Turn 1:
+回合 1:
   [tool] list_files({ directory: "sample-project/src" })
   [result] sample-project/src/App.tsx
            sample-project/src/components/Button.tsx
            sample-project/src/components/Header.tsx
 
-Turn 2:
+回合 2:
   [tool] read_file({ file_path: "sample-project/src/components/Button.tsx" })
   [result] 1   interface ButtonProps {
            2     label?: string;
@@ -39,7 +39,7 @@ Turn 2:
            14    );
            15  }
 
-Turn 3:
+回合 3:
   [tool] edit_file({
     file_path: "sample-project/src/components/Button.tsx",
     old_string: "bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600",
@@ -47,57 +47,57 @@ Turn 3:
   })
   [result] Edited sample-project/src/components/Button.tsx
 
-Turn 4:
-  [text] "I changed the button color from blue to red..."
+回合 4:
+  [text] "我把按钮颜色从蓝色改成了红色……"
 ```
 
-The model searched for files, read the button component, and replaced the old string with a new one. Under the hood, this is what the edit tool did:
+模型搜文件、读了 button 组件、把旧字符串换成了新字符串。底层上，编辑工具干的就是这事：
 
 ```typescript
 const updated = fileContent.replace(oldString, newString);
 fs.writeFileSync(filePath, updated);
 ```
 
-That is it. `string.replace()`.
+就这样。`string.replace()`。
 
-One small detail: production implementations use a callback function for the replacement (`content.replace(search, () => replace)`) instead of passing the string directly. This prevents JavaScript from interpreting special patterns like `$1` or `$&` in the replacement string. If the user's new code happens to contain `$1`, you do not want it treated as a regex capture group reference.
+有个小细节：生产级的实现会用一个回调函数来做替换（`content.replace(search, () => replace)`），而不是直接传字符串。这样能防止 JavaScript 把替换字符串里像 `$1` 或 `$&` 这样的特殊模式给解释掉。万一用户的新代码里正好有 `$1`，你可不想它被当成正则的捕获组引用。
 
-## Why string.replace() works
+## 为什么 string.replace() 行得通
 
-It seems too simple, but there are good reasons this approach won:
+看着是太简单了，但这套做法能胜出是有道理的：
 
-**Line numbers drift.** If you edit line 10, every line after it shifts. If the model wants to make two edits, the second edit's line numbers are now wrong. String replacement does not have this problem. It finds the exact text regardless of where it is.
+**行号会漂移。**如果你编辑第 10 行，后面每一行都往下挪。模型要是想做两处编辑，第二处的行号就全错了。字符串替换没这个问题，它找的是确切的文本，不管它在哪儿。
 
-**AST parsing is language-specific.** You would need a different parser for JavaScript, Python, Rust, HTML, CSS, YAML, Markdown, and every other language. String replacement works on any file. Even binary config files.
+**AST 解析是分语言的。**JavaScript、Python、Rust、HTML、CSS、YAML、Markdown，以及其他每一种语言，你都得有个不同的解析器。字符串替换对任何文件都管用，连二进制配置文件都行。
 
-**The model is good at it.** Language models are naturally good at outputting exact text. "Find this string and replace it with that string" is a task they handle well.
+**模型擅长这个。**语言模型天生就擅长输出确切的文本。"找到这个字符串，换成那个字符串"这种任务它们处理得很好。
 
-## The uniqueness problem
+## 唯一性问题
 
-There is one catch. What if the string appears more than once?
+有一个坑。要是那个字符串出现了不止一次呢？
 
 ```tsx
-// This file has two buttons, both with bg-blue-500
+// 这个文件有两个按钮，都是 bg-blue-500
 <button className="bg-blue-500">Save</button>
 <button className="bg-blue-500">Cancel</button>
 ```
 
-If the model sends `old_string: "bg-blue-500"`, which one do we replace? We do not know. So we reject the edit.
+如果模型发来 `old_string: "bg-blue-500"`，我们该替换哪一个？不知道。所以我们拒绝这次编辑。
 
-The rule is simple: **the old_string must appear exactly once in the file.** If it appears zero times, the string was not found. If it appears more than once, the match is ambiguous. Both are errors.
+规则很简单：**old_string 必须在文件里恰好出现一次。**如果出现零次，说明没找到这个字符串。如果出现超过一次，匹配就有歧义。两种都算错误。
 
 ```typescript
 const editFileTool: Tool = {
   name: "edit_file",
   description:
-    "Edit a file by replacing old_string with new_string. " +
-    "The old_string must appear exactly once in the file. " +
-    "Include enough surrounding context to make the match unique.",
+    "通过把 old_string 替换为 new_string 来编辑一个文件。" +
+    "old_string 必须在文件里恰好出现一次。" +
+    "包含足够多的上下文，让匹配唯一。",
   inputSchema: z.object({
-    file_path: z.string().describe("The path to the file to edit"),
-    old_string: z.string().describe("The exact text to find"),
-    new_string: z.string().describe("The replacement text"),
-    replace_all: z.boolean().optional().describe("Replace all occurrences"),
+    file_path: z.string().describe("要编辑的文件路径"),
+    old_string: z.string().describe("要查找的确切文本"),
+    new_string: z.string().describe("替换成的文本"),
+    replace_all: z.boolean().optional().describe("替换所有出现处"),
   }),
   async call(input) {
     const filePath = input.file_path as string;
@@ -105,26 +105,26 @@ const editFileTool: Tool = {
     const newString = input.new_string as string;
     const content = fs.readFileSync(filePath, "utf-8");
 
-    // Count occurrences
+    // 统计出现次数
     const count = content.split(oldString).length - 1;
 
     if (count === 0) {
-      return "Error: The old_string was not found in the file.";
+      return "错误：在文件里没有找到 old_string。";
     }
 
     if (count > 1) {
-      return `Error: Found ${count} matches. Include more surrounding context to make the match unique.`;
+      return `错误：找到了 ${count} 处匹配。请包含更多上下文，让匹配唯一。`;
     }
 
-    // Exactly one match. Safe to replace.
+    // 恰好一处匹配。可以安全替换。
     const updated = content.replace(oldString, newString);
     fs.writeFileSync(filePath, updated);
-    return `Edited ${filePath}`;
+    return `已编辑 ${filePath}`;
   },
 };
 ```
 
-When the model gets the "Found 3 matches" error, it knows it needs to include more surrounding context. Instead of just `"bg-blue-500"`, it would send:
+当模型收到"找到 3 处匹配"这个错误时，它就知道自己得包含更多上下文了。它不会只发 `"bg-blue-500"`，而是会发：
 
 ```json
 {
@@ -133,39 +133,39 @@ When the model gets the "Found 3 matches" error, it knows it needs to include mo
 }
 ```
 
-Now the match is unique. The edit goes through.
+现在匹配唯一了，编辑就通过了。
 
-There is also a `replace_all` option for when you actually want to replace every occurrence. But the default is to require uniqueness. This prevents accidental edits.
+还有一个 `replace_all` 选项，用于你确实想替换每一处出现的情况。但默认是要求唯一性的，这能防止误改。
 
-## The validation flow
+## 校验流程
 
 ```mermaid
 flowchart TD
-    A[edit_file called] --> B{File exists?}
-    B -->|No| C[Error: file not found]
-    B -->|Yes| D{old_string found?}
-    D -->|No| E[Error: string not found]
-    D -->|Yes| F{Exactly one match?}
-    F -->|No| G[Error: multiple matches, need more context]
-    F -->|Yes| H{File changed since last read?}
-    H -->|Yes| I[Error: file is stale, read it again]
-    H -->|No| J[Apply string.replace and save]
+    A[edit_file 被调用] --> B{文件存在吗?}
+    B -->|不存在| C[错误: 文件未找到]
+    B -->|存在| D{找到 old_string 了吗?}
+    D -->|没有| E[错误: 字符串未找到]
+    D -->|找到了| F{恰好一处匹配吗?}
+    F -->|不是| G[错误: 多处匹配, 需要更多上下文]
+    F -->|是| H{自上次读取后文件变过吗?}
+    H -->|变过| I[错误: 文件已过期, 重新读一遍]
+    H -->|没变| J[执行 string.replace 并保存]
 ```
 
-## Quote normalization
+## 引号归一化
 
-Here is a subtle problem. Sometimes the model outputs curly quotes ( \u201c \u201d ) instead of straight quotes ( " ). This happens because the model was trained on text that uses curly quotes. If the file has straight quotes and the model sends curly quotes, the match fails even though the text "looks" the same.
+有个微妙的问题。有时候模型会输出弯引号（ “ ” ）而不是直引号（ " ）。这是因为模型是在使用弯引号的文本上训练出来的。如果文件里是直引号，而模型发来弯引号，那即便文本"看起来"一样，匹配也会失败。
 
-The fix: try the exact match first. If it fails, normalize both the search string and the file content (convert all curly quotes to straight quotes), and try again. If the normalized version matches, use the position from the normalized match to find the original text in the file.
+解决办法：先试确切匹配。如果失败，就把搜索字符串和文件内容都归一化（把所有弯引号转成直引号），再试一次。如果归一化后的版本匹配上了，就用归一化匹配的位置去文件里定位原始文本。
 
 ```typescript
 function findActualString(fileContent: string, searchString: string): string | null {
-  // Try exact match first
+  // 先试确切匹配
   if (fileContent.includes(searchString)) {
     return searchString;
   }
 
-  // Try with normalized quotes
+  // 用归一化后的引号再试
   const normalize = (s: string) =>
     s.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
 
@@ -174,7 +174,7 @@ function findActualString(fileContent: string, searchString: string): string | n
 
   const index = normalizedFile.indexOf(normalizedSearch);
   if (index !== -1) {
-    // Return the original text from the file (with its original quotes)
+    // 返回文件里的原始文本（带原本的引号）
     return fileContent.substring(index, index + searchString.length);
   }
 
@@ -182,46 +182,46 @@ function findActualString(fileContent: string, searchString: string): string | n
 }
 ```
 
-This is a small thing, but it prevents a lot of frustrating failures where the edit "should" work but does not.
+这是件小事，但能省掉一堆让人抓狂的失败——编辑"本该"成功却偏偏不成功。
 
-## Staleness detection
+## 过期检测
 
-What if the user edits the file manually while the agent is working? The model read the file five turns ago. It has the old version in its context. It sends an edit based on the old version. But the file on disk has changed.
+要是智能体干活时，用户手动改了文件呢？模型五个回合前读了文件，它上下文里是旧版本，它基于旧版本发来一次编辑。可磁盘上的文件已经变了。
 
-If we apply the edit, we might overwrite the user's changes. That is bad.
+如果我们照样应用这次编辑，可能会覆盖掉用户的改动。那可糟了。
 
-The fix: track when the model last read each file. Before applying an edit, check if the file has been modified since then. If it has, reject the edit and tell the model to read the file again.
+解决办法：记录模型上次读每个文件的时间。应用编辑之前，检查文件自那之后有没有被改过。如果改过，就拒绝这次编辑，让模型重新读一遍文件。
 
 ```typescript
-// Track when each file was last read by the model
+// 记录每个文件被模型上次读取的时间
 const readTimestamps = new Map<string, number>();
 
-// In the read_file tool:
+// 在 read_file 工具里:
 readTimestamps.set(filePath, Date.now());
 
-// In the edit_file tool:
+// 在 edit_file 工具里:
 const lastRead = readTimestamps.get(filePath);
 if (lastRead) {
   const stat = fs.statSync(filePath);
   if (stat.mtimeMs > lastRead) {
-    return "Error: File has been modified since you last read it. Read it again first.";
+    return "错误：自你上次读取后，文件已被修改。请先重新读一遍。";
   }
 }
 ```
 
-This is a simple version. Production agents go further: they also compare the file content (not just the timestamp) because some systems update timestamps without actually changing the content (cloud sync, antivirus scans). The full check is: if the timestamp changed, compare the content too. Only reject if the content actually differs.
+这是个简化版。生产级智能体会更进一步：它们还会比对文件内容（不只是时间戳），因为有些系统会在内容没变的情况下更新时间戳（云同步、杀毒扫描）。完整的检查是：如果时间戳变了，就再比对内容，只有内容确实不同时才拒绝。
 
-## What is still missing
+## 还缺什么
 
-The model can now search, read, and edit files. But it does not always make smart choices. Sometimes it guesses file paths instead of searching. Sometimes it tries to edit a file it has not read. In the next chapter, we will fix this with a system prompt that teaches the model how to behave.
+模型现在能搜、能读、能编辑文件了。但它并不总是做出聪明的选择。有时它不去搜索，而是猜文件路径。有时它想编辑一个它还没读过的文件。下一章，我们用一段系统提示词来解决这个问题，教模型该怎么做事。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:03
 ```
 
-Try prompts like:
+试试这些提示词：
 - "Change the button color to red in the sample project"
 - "Change the header title default from 'My App' to 'Hello World' in the sample project"
 - "Change the heading size from text-2xl to text-4xl in the sample project"

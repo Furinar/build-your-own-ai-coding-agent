@@ -1,24 +1,24 @@
-# Chapter 11: Web Access
+# 第 11 章：访问网络
 
-## The problem
+## 问题所在
 
-Our agent can only see local files. If the user asks "how do I use the useEffect hook?", the agent can search the codebase for examples, but it cannot look up the official React documentation. If an error message appears that the agent has never seen, it cannot search for solutions online.
+我们的智能体只能看到本地文件。如果用户问“useEffect 这个 hook 怎么用？”，智能体可以在代码库里搜例子，但没法去查 React 官方文档。如果冒出一个它从没见过的报错，它也没法上网搜解决办法。
 
-Developers constantly reference the web: documentation, Stack Overflow, blog posts, API references. An agent without web access is like a developer without a browser.
+开发者时时刻刻都在查网络：文档、Stack Overflow、博客、API 参考。一个不能访问网络的智能体，就像一个没有浏览器的开发者。
 
-## What is web access?
+## 什么是访问网络？
 
-Web access for an agent means two tools:
+对智能体来说，访问网络意味着两个工具：
 
-1. **Fetch**: Give it a URL, get back the page content. Like opening a specific link.
-2. **Search**: Give it a query, get back a list of results with titles and URLs. Like typing into a search engine.
+1. **抓取（Fetch）**：给它一个 URL，返回页面内容。就像打开一个具体的链接。
+2. **搜索（Search）**：给它一个查询词，返回一组带标题和 URL 的结果。就像在搜索引擎里输入关键词。
 
-The model uses search to find relevant pages, then fetch to read them. Same way you would.
+模型用搜索找到相关页面，再用抓取去读它们——跟你平时的做法一模一样。
 
-## Walkthrough: "How do I use useEffect?"
+## 演练：“useEffect 怎么用？”
 
 ```
-Turn 1:
+第 1 轮：
   [tool] web_fetch({
     url: "https://react.dev/reference/react/useEffect",
     prompt: "Explain how useEffect works with examples"
@@ -27,26 +27,26 @@ Turn 1:
             with an external system. Basic usage: useEffect(() => { ... }, [deps]).
             The first argument is the setup function..."
 
-Turn 2:
+第 2 轮：
   [text] "useEffect lets you run side effects in your components.
           Here is how it works: ..."
 ```
 
-The agent fetched the React docs and extracted the relevant information. The user gets an answer grounded in real documentation, not just the model's training data.
+智能体抓取了 React 文档，提取出相关信息。用户得到的是一个基于真实文档的答案，而不只是模型训练数据里的东西。
 
-## Building the fetch tool
+## 构建抓取工具
 
-The fetch tool takes a URL and returns the page content as text. But there are a few problems to solve:
+抓取工具接收一个 URL，把页面内容以文本形式返回。但这里有几个问题要解决：
 
-**HTML is noisy.** A web page is full of navigation, ads, scripts, and styling. The model does not need any of that. We need to convert HTML to clean text.
+**HTML 很杂乱。** 一个网页里塞满了导航、广告、脚本、样式。模型一样都不需要。我们得把 HTML 转成干净的文本。
 
-**Pages can be huge.** Some documentation pages are 100,000+ characters. Dumping all of that into the context wastes tokens. We need to truncate.
+**页面可能很大。** 有些文档页面有 10 万多个字符。把这些全塞进上下文纯属浪费 token。我们得做截断。
 
-**The model needs focus.** Instead of sending the entire page content, we can ask the model "here is the page, extract the part about X." This gives the main model a focused summary instead of a wall of text.
+**模型需要聚焦。** 与其把整个页面内容发过去，不如告诉模型“这是页面，把关于 X 的部分提取出来”。这样主模型拿到的是一份聚焦的摘要，而不是一大堆文字。
 
-### Converting HTML to text
+### 把 HTML 转成文本
 
-The simplest approach is stripping HTML tags with regex:
+最简单的办法是用正则去掉 HTML 标签：
 
 ```typescript
 function htmlToText(html: string): string {
@@ -59,9 +59,9 @@ function htmlToText(html: string): string {
 }
 ```
 
-This works for simple pages but loses structure. Headings, lists, and code blocks all become flat text.
+对简单页面有用，但会丢掉结构。标题、列表、代码块全都变成了扁平的文本。
 
-A better approach is converting HTML to Markdown using a library like [Turndown](https://github.com/mixmark-io/turndown). It preserves the document structure so the model can read it properly:
+更好的办法是用像 [Turndown](https://github.com/mixmark-io/turndown) 这样的库把 HTML 转成 Markdown。它保留了文档结构，让模型能正确地阅读：
 
 ```typescript
 import Turndown from "turndown";
@@ -72,9 +72,9 @@ function htmlToMarkdown(html: string): string {
 }
 ```
 
-One dependency, one line. Headings stay headings, code blocks stay code blocks, links stay links. This is what production agents use. Our example uses Turndown since it is simple and gives much better results.
+一个依赖，一行代码。标题还是标题，代码块还是代码块，链接还是链接。生产级智能体用的就是这个。我们的示例也用 Turndown，因为它简单，效果又好得多。
 
-### The basic fetch tool
+### 基础抓取工具
 
 ```typescript
 const MAX_WEB_CONTENT = 50_000;
@@ -82,29 +82,29 @@ const MAX_WEB_CONTENT = 50_000;
 const webFetchTool: Tool = {
   name: "web_fetch",
   description:
-    "Fetch a web page and extract content based on a prompt. " +
-    "Returns the relevant content from the page.",
+    "抓取一个网页，并根据 prompt 提取内容。" +
+    "返回页面里相关的内容。",
   inputSchema: z.object({
-    url: z.string().describe("The URL to fetch"),
-    prompt: z.string().describe("What to extract from the page"),
+    url: z.string().describe("要抓取的 URL"),
+    prompt: z.string().describe("要从页面里提取什么"),
   }),
   async call(input) {
     const url = input.url as string;
     const prompt = input.prompt as string;
 
-    // 1. Fetch the page
+    // 1. 抓取页面
     const response = await fetch(url);
     if (!response.ok) {
-      return `Error: HTTP ${response.status} ${response.statusText}`;
+      return `错误：HTTP ${response.status} ${response.statusText}`;
     }
     const html = await response.text();
 
-    // 2. Convert HTML to markdown
+    // 2. 把 HTML 转成 markdown
     const text = htmlToMarkdown(html);
 
-    // 3. Truncate if too long
+    // 3. 过长就截断
     const truncated = text.length > MAX_WEB_CONTENT
-      ? text.slice(0, MAX_WEB_CONTENT) + "\n[Truncated]"
+      ? text.slice(0, MAX_WEB_CONTENT) + "\n[已截断]"
       : text;
 
     return truncated;
@@ -112,26 +112,26 @@ const webFetchTool: Tool = {
 };
 ```
 
-This fetches the page, converts to text, and truncates. The model gets readable content it can reason about.
+这段代码抓取页面、转成文本、再截断。模型拿到的是它可以推理的、可读的内容。
 
-### Using a secondary model for extraction
+### 用次级模型做提取
 
-The basic version sends the whole page (up to 50,000 chars) to the main model. That works, but it wastes tokens. Most of the page is irrelevant to what the user asked.
+基础版会把整个页面（最多 50000 个字符）发给主模型。这能用，但浪费 token，因为页面里大部分内容都和用户问的东西无关。
 
-Production agents solve this with a **secondary model call**. They send the page content to a cheap, fast model with the prompt "extract the part about X" and return the summary to the main model:
+生产级智能体用一次**次级模型调用**来解决这个问题。它们把页面内容连同“把关于 X 的部分提取出来”的提示词一起发给一个便宜又快的模型，再把摘要返回给主模型：
 
 ```typescript
 async call(input) {
   const url = input.url as string;
   const prompt = input.prompt as string;
 
-  // ... fetch and strip HTML (same as before) ...
+  // ... 抓取并剥离 HTML（和前面一样）...
 
-  // Use a cheap model to extract relevant content
+  // 用一个便宜的模型来提取相关内容
   const extraction = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",  // cheap and fast
+    model: "claude-haiku-4-5-20251001",  // 便宜又快
     max_tokens: 2048,
-    system: "Extract the relevant information from this web page based on the user's prompt. Be concise.",
+    system: "根据用户的 prompt，从这个网页里提取相关信息。保持简洁。",
     messages: [
       {
         role: "user",
@@ -149,15 +149,15 @@ async call(input) {
 }
 ```
 
-Now the main model gets a focused 200-500 token summary instead of 50,000 characters of page content. This saves tokens and keeps the context clean.
+现在主模型拿到的是一份聚焦的、200 到 500 token 的摘要，而不是 50000 个字符的页面内容。这既省 token，又让上下文保持干净。
 
-The tradeoff: an extra API call per fetch. But it is a cheap model, so the cost is small compared to the tokens saved.
+代价是：每次抓取多一次 API 调用。但用的是便宜模型，跟省下的 token 相比，这点成本不算什么。
 
-## Caching
+## 缓存
 
-The agent might fetch the same URL multiple times in one session. Maybe it fetched the React docs on turn 3 and wants to reference them again on turn 10. Fetching the same page twice is wasteful.
+智能体在一次会话里可能会多次抓取同一个 URL。也许它在第 3 轮抓过 React 文档，到第 10 轮又想引用一次。同一个页面抓两遍是浪费。
 
-A simple in-memory cache fixes this:
+一个简单的内存缓存就能解决：
 
 ```typescript
 const urlCache = new Map<string, string>();
@@ -165,53 +165,53 @@ const urlCache = new Map<string, string>();
 async call(input) {
   const url = input.url as string;
 
-  // Check cache first
+  // 先查缓存
   const cached = urlCache.get(url);
   if (cached) {
     return cached;
   }
 
-  // ... fetch and process ...
+  // ... 抓取并处理 ...
 
-  // Store in cache
+  // 存入缓存
   urlCache.set(url, result);
   return result;
 }
 ```
 
-The cache lasts for the session. When the agent restarts, the cache is empty. This is fine because web content can change, and you do not want stale cached pages persisting forever.
+这个缓存只在会话期间有效。智能体重启后，缓存就空了。这样挺好，因为网页内容会变，你不会想让陈旧的缓存页面永远留着。
 
-## Web search
+## 网络搜索
 
-Search is trickier than fetching. You need a search backend. There are two approaches:
+搜索比抓取更棘手。你需要一个搜索后端。有两种办法：
 
-- **External API**: Use a search API like Google Custom Search, Bing Search, or Brave Search. These require separate API keys and have rate limits.
-- **Built-in server-side**: Some LLM providers offer web search as a built-in feature. You pass a special tool definition in your API call, and the provider performs the search on their side.
+- **外部 API**：用像 Google Custom Search、Bing Search 或 Brave Search 这样的搜索 API。它们需要单独的 API key，而且有速率限制。
+- **内置的服务端搜索**：有些 LLM 提供方把网络搜索作为内置功能。你在 API 调用里传一个特殊的工具定义，由提供方在它们那边执行搜索。
 
-Our examples use the Anthropic SDK, which supports built-in web search. You pass a `web_search` tool in the API call, and Claude searches the web server-side. No extra API key needed.
+我们的示例用的是 Anthropic SDK，它支持内置网络搜索。你在 API 调用里传一个 `web_search` 工具，Claude 就会在服务端搜索网络。不需要额外的 API key。
 
-The idea is simple: instead of our agent calling the search tool, we make a separate API call to Claude with the web search tool enabled. Claude performs the search and returns the results. Our agent then parses those results.
+思路很简单：不让我们的智能体自己去调搜索工具，而是向 Claude 另外发一次开启了网络搜索工具的 API 调用。Claude 执行搜索并返回结果，然后我们的智能体解析这些结果。
 
 ```typescript
 const webSearchTool: Tool = {
   name: "web_search",
-  description: "Search the web and return results with titles and URLs.",
+  description: "搜索网页，返回带标题和 URL 的结果。",
   inputSchema: z.object({
-    query: z.string().describe("The search query"),
+    query: z.string().describe("搜索查询词"),
   }),
   async call(input) {
     const query = input.query as string;
 
-    // Make a separate API call with the server-side web search tool
+    // 另外发一次 API 调用，带上服务端网络搜索工具
     const response = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
-      system: "Perform the web search and return the results.",
+      system: "执行网络搜索并返回结果。",
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
-      messages: [{ role: "user", content: `Search the web for: ${query}` }],
+      messages: [{ role: "user", content: `搜索网页：${query}` }],
     });
 
-    // Extract search results and text from the response
+    // 从响应里提取搜索结果和文本
     const parts: string[] = [];
     for (const block of response.content) {
       if (block.type === "web_search_tool_result") {
@@ -225,26 +225,26 @@ const webSearchTool: Tool = {
       }
     }
 
-    return parts.join("\n") || "No results found.";
+    return parts.join("\n") || "没有找到结果。";
   },
 };
 ```
 
-The model gets back titles, URLs, and sometimes a text summary. It can then use `web_fetch` on any URL that looks relevant. Search finds the pages. Fetch reads them.
+模型拿回标题、URL，有时还有一段文本摘要。然后它就可以对任何看起来相关的 URL 用 `web_fetch`。搜索负责找页面，抓取负责读页面。
 
-If you are using a different LLM provider, replace this with their equivalent. OpenAI has a similar server-side search feature. Or use an external API like Brave Search and parse the JSON response yourself.
+如果你用的是别的 LLM 提供方，就换成它们对应的功能。OpenAI 有类似的服务端搜索功能。或者用像 Brave Search 这样的外部 API，自己解析返回的 JSON。
 
-## Permissions
+## 权限
 
-Web access should ask for permission. You do not want the agent silently fetching random URLs. It could be sending your code to an external service, or fetching from a malicious site.
+访问网络应该征求许可。你不会想让智能体悄无声息地去抓一些乱七八糟的 URL——它可能把你的代码发给某个外部服务，或者从一个恶意站点抓取内容。
 
 ```typescript
 checkPermissions(input) {
-  return "ask";  // Always ask before fetching
+  return "ask";  // 抓取前总是先问
 }
 ```
 
-Production agents are more nuanced. They maintain a list of preapproved domains (like official documentation sites) that skip the permission prompt. Other domains always ask:
+生产级智能体做得更细致。它们维护一份预先批准的域名清单（比如官方文档站点），这些会跳过权限询问。其他域名则总是要问：
 
 ```typescript
 const PREAPPROVED_HOSTS = new Set([
@@ -253,31 +253,31 @@ const PREAPPROVED_HOSTS = new Set([
   "docs.python.org",
   "doc.rust-lang.org",
   "go.dev",
-  // ... other trusted documentation sites
+  // ... 其他可信的文档站点
 ]);
 
 checkPermissions(input) {
   const hostname = new URL(input.url as string).hostname;
   if (PREAPPROVED_HOSTS.has(hostname)) {
-    return "allow";  // Trusted docs site, no need to ask
+    return "allow";  // 可信文档站点，不用问
   }
-  return "ask";  // Unknown domain, ask the user
+  return "ask";  // 未知域名，问问用户
 }
 ```
 
-This way, fetching `react.dev` is automatic but fetching `random-site.com` needs approval.
+这样一来，抓取 `react.dev` 是自动的，而抓取 `random-site.com` 就需要批准。
 
-## What is still missing
+## 还缺什么
 
-Our agent lives in the moment. Close it, and everything is gone. The conversation, the files it read, the decisions it made. In the next chapter, we will add persistence so the agent can save its state and pick up where it left off.
+我们的智能体活在当下。一关掉它，一切都没了——对话、读过的文件、做过的决定。下一章我们会加上持久化，让智能体能保存自己的状态，从上次停下的地方接着来。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:11
 ```
 
-Try:
-- "Fetch https://example.com and tell me what it says"
-- "Search the web for how to use React useEffect"
-- "What is on the Anthropic homepage?" (it will fetch and summarize)
+试试：
+- “抓取 https://example.com 并告诉我它写了什么”
+- “上网搜索 React useEffect 怎么用”
+- “Anthropic 首页上有什么？”（它会抓取并总结）

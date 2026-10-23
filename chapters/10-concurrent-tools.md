@@ -1,8 +1,8 @@
-# Chapter 10: Concurrent Tool Execution
+# 第 10 章：并发执行工具
 
-## The problem
+## 问题所在
 
-In the previous chapters, the model usually calls one tool per turn. It calls `read_file`, gets the result, then decides what to do next. But the model can also call **multiple tools in a single turn**. Instead of one `tool_use` block in the response, it returns several:
+在前面几章里，模型通常每一轮只调用一个工具。它调用 `read_file`，拿到结果，再决定下一步做什么。但模型其实也可以在**一轮里调用多个工具**。响应里不再只有一个 `tool_use` 块，而是返回好几个：
 
 ```json
 {
@@ -14,54 +14,54 @@ In the previous chapters, the model usually calls one tool per turn. It calls `r
 }
 ```
 
-The model is saying: "I need all three files. Get them for me." Our loop already handles this. Remember the `for` loop from Chapter 1 that executes each tool?
+模型的意思是：“这三个文件我都要，帮我取过来。”我们的循环已经能处理这种情况了。还记得第 1 章里那个逐个执行工具的 `for` 循环吗？
 
 ```typescript
 for (const toolUse of toolUseBlocks) {
-  const result = await tool.call(toolUse.input);  // waits for each one
+  const result = await tool.call(toolUse.input);  // 逐个等待
   toolResults.push({ ... });
 }
 ```
 
-It runs them one at a time because of `await`. Each tool waits for the previous one to finish. Each file read takes 50ms. Three reads: 150ms. If we run them at the same time: 50ms. Three times faster.
+因为有 `await`，它一次只跑一个。每个工具都得等上一个跑完。读一个文件要 50ms，三次就是 150ms。如果同时跑，只要 50ms，快了三倍。
 
-But what about `edit_file`? If two edits target the same file, running them in parallel could corrupt the file. One edit might overwrite the other.
+那 `edit_file` 呢？如果两次编辑改的是同一个文件，并行执行可能会把文件搞坏——一次编辑把另一次的结果覆盖掉。
 
-We need to know which tools are safe to run in parallel and which are not.
+所以我们得知道哪些工具可以安全并行，哪些不行。
 
-## The concurrency flag
+## 并发安全标志
 
-Each tool declares whether it is safe to run alongside other tools:
+每个工具都声明自己能否和其他工具同时运行：
 
 ```typescript
 interface Tool {
   name: string;
-  // ... other fields
+  // ... 其他字段
   isConcurrencySafe: boolean;
 }
 ```
 
-The rule is simple:
+规则很简单：
 
-| Tool | Concurrent? | Why |
+| 工具 | 可并发？ | 原因 |
 |---|---|---|
-| read_file | Yes | Reading does not change state |
-| list_files | Yes | Listing does not change state |
-| search_files | Yes | Searching does not change state |
-| edit_file | No | Two edits could conflict |
-| write_file | No | Two writes could conflict |
-| run_command | Usually no | Commands can change state, affect the filesystem, share environment |
+| read_file | 是 | 读取不改变状态 |
+| list_files | 是 | 列目录不改变状态 |
+| search_files | 是 | 搜索不改变状态 |
+| edit_file | 否 | 两次编辑可能冲突 |
+| write_file | 否 | 两次写入可能冲突 |
+| run_command | 通常否 | 命令可能改变状态、影响文件系统、共享环境 |
 
-Read-only tools are safe to parallelize. Tools that change state are not.
+只读工具可以安全并行，改变状态的工具不行。
 
-In practice, the flag can depend on the input. A shell command like `cat file.txt` is read-only and could be safe. Production agents check if a command is read-only and allow concurrency in that case. For simplicity, we mark all shell commands as unsafe. You can refine this later.
+实际上，这个标志可以取决于输入。像 `cat file.txt` 这样的 shell 命令是只读的，并行也没问题。生产级智能体会判断命令是否只读，是的话就允许并发。为了简单起见，我们把所有 shell 命令都标记为不安全。你以后可以再细化。
 
-## Partitioning into batches
+## 拆分成批次
 
-When the model returns multiple tool calls in one response, we group them into batches:
+当模型在一个响应里返回多个工具调用时，我们把它们分成若干批次：
 
 ```
-Tool calls from the model (5 calls in one response):
+模型返回的工具调用（一个响应里有 5 个调用）：
 
   1. read_file("src/App.tsx")
   2. read_file("src/components/Button.tsx")
@@ -69,14 +69,14 @@ Tool calls from the model (5 calls in one response):
   4. edit_file("src/App.tsx", ...)
   5. read_file("src/components/Header.tsx")
 
-Partitioned into batches:
+拆分后的批次：
 
-  Batch 1: [read_file, read_file, search_files]  ← all safe, run in parallel
-  Batch 2: [edit_file]                            ← not safe, run alone
-  Batch 3: [read_file]                            ← safe, but must wait for the edit
+  批次 1：[read_file, read_file, search_files]  ← 都安全，并行执行
+  批次 2：[edit_file]                            ← 不安全，单独执行
+  批次 3：[read_file]                            ← 安全，但必须等编辑完成
 ```
 
-The algorithm walks through the tool calls left to right:
+算法从左到右遍历这些工具调用：
 
 ```typescript
 interface Batch {
@@ -94,20 +94,20 @@ function partitionIntoBatches(toolCalls: ToolCall[]): Batch[] {
     const isSafe = tool?.isConcurrencySafe ?? false;
 
     if (isSafe && currentIsConcurrent) {
-      // Add to current concurrent batch
+      // 加入当前并发批次
       currentBatch.push(call);
     } else {
-      // Flush current batch if it has items
+      // 当前批次有内容就先收尾
       if (currentBatch.length > 0) {
         batches.push({ tools: currentBatch, concurrent: currentIsConcurrent });
       }
-      // Start new batch
+      // 开启新批次
       currentBatch = [call];
       currentIsConcurrent = isSafe;
     }
   }
 
-  // Flush the last batch
+  // 收尾最后一个批次
   if (currentBatch.length > 0) {
     batches.push({ tools: currentBatch, concurrent: currentIsConcurrent });
   }
@@ -116,7 +116,7 @@ function partitionIntoBatches(toolCalls: ToolCall[]): Batch[] {
 }
 ```
 
-Using the example from earlier, the output would look like:
+拿前面的例子来说，输出大概长这样：
 
 ```typescript
 [
@@ -143,11 +143,11 @@ Using the example from earlier, the output would look like:
 ]
 ```
 
-Three batches. The first and third can run their tools in parallel. The second runs alone.
+三个批次。第一个和第三个批次里的工具可以并行跑，第二个批次单独跑。
 
-## Executing batches
+## 执行批次
 
-Concurrent batches use `Promise.all()`. Non-concurrent batches run one tool at a time:
+并发批次用 `Promise.all()`。非并发批次则一次只跑一个工具：
 
 ```typescript
 async function executeBatches(batches: Batch[]): Promise<ToolResult[]> {
@@ -155,13 +155,13 @@ async function executeBatches(batches: Batch[]): Promise<ToolResult[]> {
 
   for (const batch of batches) {
     if (batch.concurrent) {
-      // Run all tools in this batch at the same time
+      // 这个批次里的工具全部同时执行
       const results = await Promise.all(
         batch.tools.map(call => executeTool(call))
       );
       allResults.push(...results);
     } else {
-      // Run tools one at a time
+      // 一次只跑一个工具
       for (const call of batch.tools) {
         const result = await executeTool(call);
         allResults.push(result);
@@ -173,27 +173,27 @@ async function executeBatches(batches: Batch[]): Promise<ToolResult[]> {
 }
 ```
 
-Our batch approach is simple and works well. Production agents often use a different mechanism: a **queue**. Instead of pre-grouping tools into batches, they walk through a list of queued tools and start each one if conditions allow. "Can this tool run right now?" If all currently running tools are safe and this one is also safe, start it. If not, wait.
+我们的批次方案很简单，也很好用。生产级智能体常用另一种机制：**队列**。它们不预先把工具分批，而是遍历一个排队的工具列表，条件允许就启动一个。它问的是：“这个工具现在能跑吗？”如果当前正在运行的工具都是安全的，而且这个工具也安全，就启动它；否则就等待。
 
-The result is the same (safe tools run together, unsafe tools run alone) but the queue approach handles tools that arrive mid-execution better, since streaming can deliver tool calls one at a time while earlier tools are still running.
+结果是一样的（安全工具一起跑，不安全工具单独跑），但队列方式能更好地处理执行过程中陆续到来的工具，因为流式输出可能在前面的工具还在跑的时候，一个一个地送来新的工具调用。
 
-For learning purposes, batching is easier to understand. The queue approach is an optimization you can switch to later.
+出于学习目的，分批更好理解。队列方式是你以后可以切换过去的一种优化。
 
-## Visualized
+## 图示
 
 ```mermaid
 flowchart LR
-    subgraph "Batch 1 (parallel)"
+    subgraph "批次 1（并行）"
         R1["read_file(App.tsx)"]
         R2["read_file(Button.tsx)"]
         S1["search_files(className)"]
     end
 
-    subgraph "Batch 2 (serial)"
+    subgraph "批次 2（串行）"
         E1["edit_file(App.tsx)"]
     end
 
-    subgraph "Batch 3 (parallel)"
+    subgraph "批次 3（并行）"
         R3["read_file(Header.tsx)"]
     end
 
@@ -203,35 +203,35 @@ flowchart LR
     E1 --> R3
 ```
 
-Batch 1 runs all three reads/searches at the same time. When all three are done, Batch 2 runs the edit alone. Then Batch 3 runs the final read.
+批次 1 同时跑三个读取/搜索。三个都完成后，批次 2 单独跑那个编辑。然后批次 3 跑最后那个读取。
 
-## Order preservation
+## 保持顺序
 
-Even though tools in a concurrent batch finish at different times, results must be returned in the original order. The model expects results to match the order of its tool calls.
+虽然并发批次里的工具会在不同时刻完成，但返回结果必须按原始顺序排列。模型期望结果和它发出的工具调用顺序一一对应。
 
-`Promise.all()` already handles this. It returns results in the same order as the input promises, regardless of which one resolved first.
+`Promise.all()` 已经帮我们处理好了。它按输入 promise 的顺序返回结果，不管哪个先 resolve。
 
 ```typescript
 const results = await Promise.all([
-  read_file("src/App.tsx"),              // Finishes 3rd (large file)
-  read_file("src/components/Button.tsx"), // Finishes 1st (small file)
-  search_files("className"),             // Finishes 2nd
+  read_file("src/App.tsx"),              // 第 3 个完成（大文件）
+  read_file("src/components/Button.tsx"), // 第 1 个完成（小文件）
+  search_files("className"),             // 第 2 个完成
 ]);
 
-// results[0] = App.tsx contents (matches input order, not finish order)
-// results[1] = Button.tsx contents
-// results[2] = search results
+// results[0] = App.tsx 内容（对应输入顺序，而非完成顺序）
+// results[1] = Button.tsx 内容
+// results[2] = 搜索结果
 ```
 
-## Error handling
+## 错误处理
 
-When a tool in a batch fails, what happens to the other tools?
+当批次里的某个工具失败时，其他工具会怎样？
 
-For read-only tools, errors are independent. If `read_file("App.tsx")` fails but `read_file("Button.tsx")` succeeds, there is no problem. Return the error for one and the result for the other.
+对只读工具来说，错误互相独立。如果 `read_file("App.tsx")` 失败而 `read_file("Button.tsx")` 成功，没有问题——一个返回错误，另一个返回结果就行。
 
-For shell commands, it is different. If a batch contained a `run_command` that fails (like a build step), sibling tools running in the same batch might be in an inconsistent state. Production agents abort sibling tools when a shell command fails.
+对 shell 命令就不一样了。如果批次里有个失败的 `run_command`（比如一个构建步骤），同批次里的其他工具可能处于不一致的状态。生产级智能体会在 shell 命令失败时中止同批次的其他工具。
 
-For our simple version, we let each tool handle its own errors:
+在我们这个简化版里，让每个工具自己处理自己的错误：
 
 ```typescript
 const results = await Promise.all(
@@ -239,27 +239,27 @@ const results = await Promise.all(
     try {
       return await executeTool(call);
     } catch (err) {
-      return { toolUseId: call.id, content: `Error: ${err}`, isError: true };
+      return { toolUseId: call.id, content: `错误：${err}`, isError: true };
     }
   })
 );
 ```
 
-Each tool call is wrapped in a try/catch. A failure in one does not affect the others.
+每个工具调用都包在 try/catch 里。一个失败不会影响其他的。
 
-## Wiring it into the loop
+## 接入循环
 
-In previous chapters, we executed tools one at a time in a `for` loop. Now we replace that with batch execution. The change is small:
+前面几章里，我们在 `for` 循环里一次只执行一个工具。现在把它换成批次执行，改动很小：
 
 ```typescript
-// Before (sequential):
+// 改之前（串行）：
 for (const toolUse of toolBlocks) {
   const tool = tools.find(t => t.name === toolUse.name);
   const result = await tool.call(toolUse.input);
   toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: result });
 }
 
-// After (concurrent):
+// 改之后（并发）：
 const toolCalls = toolBlocks.map(block => ({
   block,
   tool: tools.find(t => t.name === block.name),
@@ -269,32 +269,32 @@ const batches = partitionIntoBatches(toolCalls);
 const toolResults = await executeBatches(batches);
 ```
 
-Everything else in the agentic loop stays the same. The tool results still get pushed into the conversation as a user message. The loop still checks for tool_use blocks to decide whether to continue. The only difference is how the tools are executed between those steps.
+智能体循环里的其他部分都不变。工具结果照样作为一条用户消息推进对话。循环照样检查有没有 tool_use 块来决定是否继续。唯一的区别，是这两步之间工具的执行方式变了。
 
-## Performance impact
+## 性能提升
 
-The improvement depends on the workload:
+提升的幅度取决于具体的工作负载：
 
-| Scenario | Sequential | Concurrent | Speedup |
+| 场景 | 串行 | 并发 | 加速 |
 |---|---|---|---|
-| Read 3 small files | 150ms | 50ms | 3x |
-| Read + Search + List | 200ms | 80ms | 2.5x |
-| Read 1 file, Edit 1 file | 100ms | 100ms | 1x (cannot parallelize) |
-| 5 reads + 1 edit + 3 reads | 450ms | 200ms | 2.25x |
+| 读 3 个小文件 | 150ms | 50ms | 3 倍 |
+| 读取 + 搜索 + 列目录 | 200ms | 80ms | 2.5 倍 |
+| 读 1 个文件、改 1 个文件 | 100ms | 100ms | 1 倍（无法并行） |
+| 5 次读取 + 1 次编辑 + 3 次读取 | 450ms | 200ms | 2.25 倍 |
 
-The bigger the batch of concurrent-safe tools, the bigger the win. If the model calls mostly reads and searches (which is common during exploration), concurrency makes a noticeable difference.
+并发安全的工具批次越大，收益越大。如果模型主要是读取和搜索（探索阶段很常见），并发带来的差别相当明显。
 
-## What is still missing
+## 还缺什么
 
-The core agent is complete. But it can only work with local files. In the next chapter, we give it access to the web so it can look up documentation, search for solutions, and read online references.
+核心智能体已经完整了，但它只能处理本地文件。下一章我们给它访问网络的能力，让它可以查文档、搜索解决方案、阅读在线参考资料。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:10
 ```
 
-Ask the agent to read multiple files and watch the logs. Concurrent reads will execute in a single batch instead of one at a time:
+让智能体读多个文件，然后观察日志。并发读取会在一个批次里一起执行，而不是一个一个来：
 
 ```
   [batch] Executing 3 tools concurrently

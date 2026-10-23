@@ -1,6 +1,6 @@
-// This example focuses on: web access (Chapter 11).
-// Includes: tools (Ch2), edit (Ch3), system prompt (Ch4), streaming (Ch9), concurrency (Ch10).
-// Omits: permissions (Ch7), subagents (Ch8), compression (Ch6) to keep the code focused.
+// 本示例聚焦于: 网络访问(第 11 章)。
+// 包含: 工具(第 2 章)、编辑(第 3 章)、系统提示词(第 4 章)、流式(第 9 章)、并发(第 10 章)。
+// 省略: 权限(第 7 章)、子代理(第 8 章)、压缩(第 6 章),让代码保持聚焦。
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -12,15 +12,15 @@ import Turndown from "turndown";
 
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You are a coding assistant. You can read, search, and edit local files. You can also fetch web pages to look up documentation or references.
+const SYSTEM_PROMPT = `你是一个编程助手。你可以读取、搜索和编辑本地文件。你还可以抓取网页来查阅文档或参考资料。
 
-# How to work
-- Use list_files and search_files to find relevant local files before editing.
-- Always read a file before editing it.
-- Use web_fetch to look up documentation, API references, or error solutions online.
-- Be concise.`;
+# 如何工作
+- 编辑前先用 list_files 和 search_files 找到相关的本地文件。
+- 编辑前永远先读文件。
+- 用 web_fetch 在线查阅文档、API 参考或报错的解决方案。
+- 保持简洁。`;
 
-// --- Types ---
+// --- 类型 ---
 interface Tool {
   name: string;
   description: string;
@@ -59,21 +59,21 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- URL cache ---
+// --- URL 缓存 ---
 const urlCache = new Map<string, string>();
 
-// --- Convert HTML to Markdown using Turndown ---
+// --- 用 Turndown 把 HTML 转成 Markdown ---
 const turndown = new Turndown();
 
 function htmlToMarkdown(html: string): string {
   return turndown.turndown(html);
 }
 
-// --- Tools ---
+// --- 工具 ---
 const tools: Tool[] = [
   {
     name: "read_file",
-    description: "Read a file with line numbers.",
+    description: "读取文件,带行号。",
     inputSchema: z.object({ file_path: z.string() }),
     isConcurrencySafe: true,
     async call(input) {
@@ -87,7 +87,7 @@ const tools: Tool[] = [
   },
   {
     name: "edit_file",
-    description: "Edit a file by replacing old_string with new_string. Read first.",
+    description: "编辑文件,用 new_string 替换 old_string。请先读取文件。",
     inputSchema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() }),
     isConcurrencySafe: false,
     async call(input) {
@@ -106,7 +106,7 @@ const tools: Tool[] = [
   },
   {
     name: "write_file",
-    description: "Create or overwrite a file.",
+    description: "创建或覆盖文件。",
     inputSchema: z.object({ file_path: z.string(), content: z.string() }),
     isConcurrencySafe: false,
     async call(input) {
@@ -118,7 +118,7 @@ const tools: Tool[] = [
   },
   {
     name: "list_files",
-    description: "List files recursively.",
+    description: "递归列出文件。",
     inputSchema: z.object({ directory: z.string().optional() }),
     isConcurrencySafe: true,
     async call(input) {
@@ -139,7 +139,7 @@ const tools: Tool[] = [
   },
   {
     name: "search_files",
-    description: "Search for a regex pattern in files.",
+    description: "在文件中搜索正则表达式模式。",
     inputSchema: z.object({ pattern: z.string(), directory: z.string().optional() }),
     isConcurrencySafe: true,
     async call(input) {
@@ -167,7 +167,7 @@ const tools: Tool[] = [
   },
   {
     name: "run_command",
-    description: "Run a shell command.",
+    description: "执行一条 shell 命令。",
     inputSchema: z.object({ command: z.string() }),
     isConcurrencySafe: false,
     async call(input) {
@@ -177,30 +177,30 @@ const tools: Tool[] = [
     },
   },
 
-  // --- Web fetch tool (new in this chapter) ---
+  // --- 网页抓取工具(本章新增) ---
   {
     name: "web_fetch",
     description:
-      "Fetch a web page and return its text content. " +
-      "Use this to look up documentation, API references, or error solutions.",
+      "抓取一个网页并返回它的文本内容。" +
+      "用它来查阅文档、API 参考或报错的解决方案。",
     inputSchema: z.object({
-      url: z.string().describe("The URL to fetch"),
-      prompt: z.string().describe("What to extract or focus on from the page"),
+      url: z.string().describe("要抓取的 URL"),
+      prompt: z.string().describe("要从页面中提取或聚焦的内容"),
     }),
-    isConcurrencySafe: true, // Fetching is read-only
+    isConcurrencySafe: true, // 抓取是只读操作
     async call(input) {
       const url = input.url as string;
       const prompt = input.prompt as string;
 
-      // Check cache
+      // 检查缓存
       const cacheKey = `${url}::${prompt}`;
       const cached = urlCache.get(cacheKey);
       if (cached) {
-        console.log(`  [cache hit] ${url}`);
+        console.log(`  [缓存命中] ${url}`);
         return cached;
       }
 
-      // Fetch the page
+      // 抓取页面
       try {
         const response = await fetch(url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; CodingAgent/1.0)" },
@@ -214,20 +214,20 @@ const tools: Tool[] = [
         const html = await response.text();
         const markdown = htmlToMarkdown(html);
 
-        // Truncate if too long
+        // 过长则截断
         const truncated = markdown.length > MAX_WEB_CONTENT
           ? markdown.slice(0, MAX_WEB_CONTENT) + "\n\n[Content truncated]"
           : markdown;
 
-        // Use a secondary model to extract relevant content
-        console.log(`  [extracting] Applying prompt to ${markdown.length} chars...`);
+        // 用一个辅助模型提取相关内容
+        console.log(`  [提取中] 对 ${markdown.length} 字符应用 prompt...`);
         const extraction = await client.messages.create({
-          model: "claude-haiku-4-5-20251001",
+          model: "trae-internal/openrouter-3o",
           max_tokens: 2048,
-          system: "You are a content extractor. Given a web page and a prompt, extract only the relevant information. Be concise and focused. If the page does not contain relevant information, say so.",
+          system: "你是一个内容提取器。给定一个网页和一个 prompt,只提取相关的信息。保持简洁、聚焦。如果页面不包含相关信息,就直接说明。",
           messages: [{
             role: "user",
-            content: `Prompt: ${prompt}\n\nPage content (from ${url}):\n${truncated}`,
+            content: `Prompt: ${prompt}\n\n页面内容(来自 ${url}):\n${truncated}`,
           }],
         });
 
@@ -236,7 +236,7 @@ const tools: Tool[] = [
           .map((b) => b.text)
           .join("\n");
 
-        // Cache the result
+        // 缓存结果
         urlCache.set(cacheKey, result);
         return result;
 
@@ -249,36 +249,36 @@ const tools: Tool[] = [
     },
   },
 
-  // --- Web search tool (new in this chapter) ---
-  // Uses Anthropic's built-in server-side web search.
-  // The search happens on Anthropic's servers. No external API key needed.
+  // --- 网页搜索工具(本章新增) ---
+  // 使用 Anthropic 内置的服务端网页搜索。
+  // 搜索在 Anthropic 的服务器上进行。无需外部 API key。
   {
     name: "web_search",
     description:
-      "Search the web and return results with titles and URLs. " +
-      "Use this to find documentation, solutions, or references online.",
+      "搜索网络并返回带标题和 URL 的结果。" +
+      "用它来在线查找文档、解决方案或参考资料。",
     inputSchema: z.object({
-      query: z.string().describe("The search query"),
+      query: z.string().describe("搜索查询"),
     }),
     isConcurrencySafe: true,
     async call(input) {
       const query = input.query as string;
 
       try {
-        // Make a separate API call with the server-side web search tool
+        // 另发一次带服务端网页搜索工具的 API 调用
         const response = await client.messages.create({
-          model: "claude-haiku-4-5-20251001",
+          model: "trae-internal/openrouter-3o",
           max_tokens: 1024,
-          system: "Perform the web search and return the results.",
+          system: "执行网络搜索并返回结果。",
           tools: [
             { type: "web_search_20250305", name: "web_search", max_uses: 5 } as any,
           ],
           messages: [
-            { role: "user", content: `Search the web for: ${query}` },
+            { role: "user", content: `在网络上搜索: ${query}` },
           ],
         });
 
-        // Extract results from the response
+        // 从响应中提取结果
         const parts: string[] = [];
         for (const block of response.content) {
           if ((block as any).type === "web_search_tool_result") {
@@ -307,7 +307,7 @@ const apiTools: Anthropic.Tool[] = tools.map((t) => ({
   input_schema: zodToJsonSchema(t.inputSchema) as Anthropic.Tool["input_schema"],
 }));
 
-// --- Streaming agentic loop (from Chapter 9, with concurrency from Chapter 10) ---
+// --- 流式智能体循环(来自第 9 章,并带第 10 章的并发) ---
 
 interface ToolCall {
   block: Anthropic.ToolUseBlock;
@@ -350,15 +350,15 @@ async function executeBatches(batches: Batch[]): Promise<Anthropic.ToolResultBlo
   const allResults: Anthropic.ToolResultBlockParam[] = [];
   for (const batch of batches) {
     if (batch.concurrent && batch.calls.length > 1) {
-      console.log(`  [batch] ${batch.calls.length} tools concurrently`);
+      console.log(`  [批次] ${batch.calls.length} 个工具并发`);
       const results = await Promise.all(batch.calls.map(executeToolCall));
       allResults.push(...results);
     } else {
       for (const call of batch.calls) {
-        console.log(`  [tool] ${call.tool.name}(${JSON.stringify(call.block.input).slice(0, 80)})`);
+        console.log(`  [工具] ${call.tool.name}(${JSON.stringify(call.block.input).slice(0, 80)})`);
         const result = await executeToolCall(call);
         const content = typeof result.content === "string" ? result.content : "";
-        console.log(`  [result] ${content.slice(0, 150)}${content.length > 150 ? "..." : ""}`);
+        console.log(`  [结果] ${content.slice(0, 150)}${content.length > 150 ? "..." : ""}`);
         allResults.push(result);
       }
     }
@@ -375,7 +375,7 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
     if (turns > maxTurns) return "[max turns reached]";
 
     const stream = client.messages.stream({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: apiTools,
@@ -449,10 +449,10 @@ async function main() {
   const conversationHistory: Anthropic.MessageParam[] = [];
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log("Agent with web access. Try:");
-  console.log('  "Fetch https://example.com and tell me what it says"');
-  console.log('  "Search the web for how to use React useEffect"');
-  console.log('  "What is on the Anthropic docs homepage?"\n');
+  console.log("带网络访问的智能体。试试:");
+  console.log('  "抓取 https://example.com 并告诉我它写了什么"');
+  console.log('  "在网上搜索如何使用 React useEffect"');
+  console.log('  "Anthropic 文档首页上有什么?"\n');
 
   const ask = () => {
     rl.question("> ", async (input) => {

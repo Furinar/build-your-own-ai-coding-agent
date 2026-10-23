@@ -1,92 +1,92 @@
-# Chapter 8: Subagents
+# 第 8 章：子代理
 
-## The problem
+## 问题
 
-You ask the agent: "Update the API, then update the tests, then update the docs."
+你让智能体：“先更新 API，再更新测试，最后更新文档。”
 
-The agent reads 10 API files, 15 test files, and 8 doc files. All those file contents are now in the conversation history. By the time it gets to the docs, the context is full of API code that is no longer relevant.
+智能体读了 10 个 API 文件、15 个测试文件、8 个文档文件。所有这些文件内容现在都在对话历史里了。等它干到文档那一步时，上下文里塞满了早已无关的 API 代码。
 
-Complex tasks have subtasks that do not need each other's context. The API exploration should not pollute the test-writing context. The test-writing should not pollute the doc-writing context.
+复杂任务里的子任务并不需要彼此的上下文。探索 API 不该污染写测试的上下文。写测试不该污染写文档的上下文。
 
-## What is a subagent?
+## 什么是子代理？
 
-A subagent is just another instance of the same agentic loop running with its own conversation history. The main agent spawns it by calling a tool (like any other tool), gives it a prompt, and gets back a text result when it is done.
+子代理不过是同一个智能体循环的另一个实例，它跑在自己的对话历史上。主智能体通过调用一个工具（跟调用别的工具一样）把它派出去，给它一段提示词，等它完成后拿回一个文本结果。
 
-The key idea: the subagent has its own messages array. Its tool calls and results stay in its own context, not the parent's. The parent only sees the final summary the subagent returns.
+核心思路是：子代理有它自己的 messages 数组。它的工具调用和结果都留在它自己的上下文里，不进父代理的。父代理只看到子代理返回的那段最终摘要。
 
-It is not a separate program or process. It is the same `agentLoop()` function called with a fresh messages array.
+它不是一个独立的程序或进程。它就是用一个全新的 messages 数组调用的那同一个 `agentLoop()` 函数。
 
-## Walkthrough: Delegating a search task
+## 实例：委派一个搜索任务
 
-The main agent gets: "Find all the components that use the Button component and tell me about them."
+主智能体收到：“找出所有用到 Button 组件的组件，然后告诉我它们的情况。”
 
-Instead of doing the search itself (which would dump results into its own context), it delegates:
+它不自己去搜（那样会把结果灌进它自己的上下文），而是委派出去：
 
 ```
 Main agent:
   [tool] subagent({
-    prompt: "Search for all files that import Button. Read each one and
-             summarize what it does with the Button component."
+    prompt: "搜索所有 import 了 Button 的文件。读每一个，
+             并总结它拿 Button 组件做了什么。"
   })
 
-  Subagent (its own loop):
+  Subagent (它自己的循环):
     [tool] search_files({ pattern: "import.*Button", directory: "src" })
     [tool] read_file("src/pages/Home.tsx")
     [tool] read_file("src/pages/Settings.tsx")
     [tool] read_file("src/pages/Profile.tsx")
-    Returns: "Found 3 components: Home uses Button for navigation,
-             Settings uses it for form submission, Profile uses it
-             for the edit action."
+    返回: "找到 3 个组件：Home 用 Button 做导航，
+             Settings 用它做表单提交，Profile 用它
+             做编辑动作。"
 
-Main agent receives: "Found 3 components: Home uses Button for..."
+Main agent 收到: "找到 3 个组件：Home 用 Button 做……"
 ```
 
-The main agent's context stays clean. It only sees the summary, not the 3 full files the subagent read. The subagent did all the heavy reading in its own isolated context.
+主智能体的上下文保持干净。它只看到那段摘要，看不到子代理读的那 3 个完整文件。所有繁重的读取，子代理都在它自己隔离的上下文里干完了。
 
-## Same function, isolated context
+## 同一个函数，隔离的上下文
 
-A subagent is not a separate program. It is the same agentic loop we built in Chapter 1, called with a fresh messages array:
+子代理不是一个独立的程序。它就是我们在第 1 章里构建的那同一个智能体循环，只不过是用一个全新的 messages 数组来调用：
 
 ```typescript
 async function runSubagent(prompt: string): Promise<string> {
-  // Fresh conversation, just the prompt
+  // 全新的对话，只有这段提示词
   const subagentMessages: Anthropic.MessageParam[] = [
     { role: "user", content: prompt },
   ];
 
-  // Run the same agentic loop with isolated messages
+  // 用隔离的 messages 跑同一个智能体循环
   return agentLoop(subagentMessages);
 }
 ```
 
-That is the core idea. The subagent calls the same `agentLoop()` function. It has access to the same tools (read, edit, search, etc.). But it has its own conversation history. Its tool results do not leak into the parent's context.
+这就是核心思路。子代理调用的是同一个 `agentLoop()` 函数。它能用同一套工具（读、改、搜等等）。但它有自己的对话历史。它的工具结果不会渗进父代理的上下文。
 
-## Shared vs isolated
+## 共享还是隔离
 
-Not everything is isolated. Some things need to be shared:
+不是所有东西都隔离。有些东西需要共享：
 
-| Component | Shared or Isolated | Why |
+| 组件 | 共享还是隔离 | 原因 |
 |---|---|---|
-| **Messages** | Isolated | The whole point. Keep contexts separate. |
-| **File read cache** | Cloned | The subagent gets a copy of what the parent has read so far (for staleness checks). New reads by the subagent do not flow back to the parent. |
-| **Tools** | Shared | Both use the same tools. |
-| **Abort signal** | Linked | If the user cancels, both parent and child should stop. |
-| **Permission rules** | Shared | If the user said "always allow edit_file," that applies to subagents too. |
+| **Messages** | 隔离 | 这正是重点所在。让上下文彼此分开。 |
+| **文件读取缓存** | 克隆 | 子代理拿到一份父代理到目前为止读过的东西的副本（用于陈旧性检查）。子代理的新读取不会回流到父代理。 |
+| **Tools** | 共享 | 两者用同一套工具。 |
+| **中止信号** | 联动 | 如果用户取消，父子都应该停下。 |
+| **权限规则** | 共享 | 如果用户说过“总是允许 edit_file”，那对子代理也同样生效。 |
 
-Here is how we set it up:
+我们是这样搭起来的：
 
 ```typescript
 async function runSubagent(
   prompt: string,
   parentAbortSignal?: AbortSignal
 ): Promise<string> {
-  // Create a child abort controller linked to the parent
+  // 创建一个与父代理联动的子 abort controller
   const childAbort = new AbortController();
   if (parentAbortSignal) {
     parentAbortSignal.addEventListener("abort", () => childAbort.abort());
   }
 
-  // Fresh messages, but shared everything else
+  // messages 全新，但其他一切共享
   const subagentMessages: Anthropic.MessageParam[] = [
     { role: "user", content: prompt },
   ];
@@ -95,38 +95,38 @@ async function runSubagent(
 }
 ```
 
-The messages are fresh. The abort signal is linked (parent cancel kills the child too). Everything else (tools, permissions, file state) is shared because it lives in module scope.
+messages 是全新的。中止信号是联动的（父代理取消会把子代理也杀掉）。其他一切（工具、权限、文件状态）都是共享的，因为它们活在模块作用域里。
 
-## The subagent tool
+## 子代理工具
 
-The subagent is itself a tool that the model can call:
+子代理本身就是一个模型可以调用的工具：
 
 ```typescript
 const subagentTool: Tool = {
   name: "subagent",
   description:
-    "Delegate a task to a subagent. The subagent runs in its own context " +
-    "and returns a summary. Use this for exploration, research, or " +
-    "subtasks that would clutter your main context.",
+    "把一个任务委派给子代理。子代理在它自己的上下文里运行，" +
+    "并返回一段摘要。用它来做探索、调研，或者那些会把你的" +
+    "主上下文搞乱的子任务。",
   inputSchema: z.object({
-    prompt: z.string().describe("The task for the subagent to perform"),
+    prompt: z.string().describe("交给子代理执行的任务"),
   }),
   checkPermissions() {
-    return "allow"; // Subagents use the same permission rules
+    return "allow"; // 子代理沿用同一套权限规则
   },
   async call(input) {
     const prompt = input.prompt as string;
-    console.log("  [subagent] Starting...");
+    console.log("  [subagent] 启动中……");
     const result = await runSubagent(prompt);
-    console.log("  [subagent] Done.");
+    console.log("  [subagent] 完成。");
     return result;
   },
 };
 ```
 
-The model decides when to use a subagent. It is just another tool in its toolbox. For big, exploratory tasks, it delegates. For simple, focused tasks, it acts directly.
+模型自己决定何时用子代理。它不过是工具箱里的又一个工具。对庞大的探索型任务，它委派出去。对简单、专注的任务，它直接动手。
 
-## How it looks in practice
+## 实际看起来是怎样的
 
 ```mermaid
 flowchart TD
@@ -142,25 +142,25 @@ flowchart TD
     style A fill:#e8e8f4
 ```
 
-The parent and child both run `agentLoop()`. The child's tool calls and results stay in its own context. The parent only sees the final text the child returns.
+父代理和子代理都跑 `agentLoop()`。子代理的工具调用和结果留在它自己的上下文里。父代理只看到子代理返回的那段最终文本。
 
-## When to use subagents
+## 什么时候用子代理
 
-Subagents are useful for:
+子代理适用于：
 
-- **Exploration**: "Find all files related to authentication" without dumping 20 file reads into the main context
-- **Multi-part tasks**: "Update the API" and "Update the tests" as separate subagent calls
-- **Background research**: Looking up patterns, reading documentation files, understanding code structure
-- **Risky experiments**: If the subagent's approach fails, the main context is not polluted with failed attempts
+- **探索**：“找出所有和认证相关的文件”，而不用把 20 个文件读取灌进主上下文
+- **多部分任务**：把“更新 API”和“更新测试”作为两次独立的子代理调用
+- **后台调研**：查找模式、读文档文件、理解代码结构
+- **有风险的实验**：如果子代理的思路失败了，主上下文也不会被失败的尝试污染
 
-Subagents are NOT useful for:
+子代理不适用于：
 
-- **Simple tasks**: Reading one file and making one edit. The overhead of a subagent is not worth it.
-- **Tasks that need parent context**: If the subagent needs to know what the parent already discussed, you would have to pass that context anyway, defeating the purpose.
+- **简单任务**：读一个文件、做一处修改。子代理的开销不值当。
+- **需要父代理上下文的任务**：如果子代理需要知道父代理已经讨论过什么，你反正还得把那段上下文传过去，这就失去了意义。
 
-## Max turns
+## 最大轮数
 
-Subagents should have a tighter turn limit than the main agent. A runaway subagent can burn tokens fast. Set a max of 10-15 turns for subagents versus 20-30 for the main agent:
+子代理的轮数上限应该比主智能体更紧。一个失控的子代理能很快烧掉 token。给子代理设 10-15 轮的上限，相对于主智能体的 20-30 轮：
 
 ```typescript
 async function runSubagent(prompt: string): Promise<string> {
@@ -171,16 +171,16 @@ async function runSubagent(prompt: string): Promise<string> {
 }
 ```
 
-## What is still missing
+## 还缺什么
 
-Our agent works, but the user experience is rough. When the model thinks, the user stares at a blank screen. When it is reading a large file, nothing happens for seconds. In the next chapter, we will add streaming so the user sees responses as they are generated, token by token.
+我们的智能体能用了，但用户体验还很糙。模型思考时，用户盯着一块空屏幕。它在读一个大文件时，好几秒钟什么都没有。下一章，我们会加上流式输出，让用户在回复生成的同时就能一个 token 一个 token 地看到它。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:08
 ```
 
-Try:
-- "Use a subagent to find all components in sample-project and describe each one"
-- "What does each file in sample-project do?" (the model might delegate the exploration)
+试试：
+- “用一个子代理找出 sample-project 里的所有组件，并逐个描述”
+- “sample-project 里每个文件是干什么的？”（模型可能会把这次探索委派出去）

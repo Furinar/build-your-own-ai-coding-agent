@@ -1,59 +1,59 @@
-# Chapter 0: Introduction
+# 第 0 章：引言
 
-## What we are building
+## 我们要做什么
 
-We are building an AI coding agent. A command-line tool where you type something like "change the button color to red" and the AI figures out which file to open, what to change, and does it for you.
+我们要做一个 AI 编程智能体。这是一个命令行工具，你输入一句话，比如"把按钮颜色改成红色"，AI 就会自己判断该打开哪个文件、改什么内容，然后帮你改好。
 
-This is the same idea behind tools like Claude Code, Cursor, Windsurf, and other AI coding assistants. They all share the same core architecture. Once you understand it, the magic disappears. It is simpler than you think.
+这和 Claude Code、Cursor、Windsurf 以及其他 AI 编程助手背后的思路是一样的。它们共用同一套核心架构。一旦你搞懂了，那层神秘感就消失了——其实比你想象的简单得多。
 
-By the end of this guide, you will have built an agent that can:
+读完这份指南，你会做出一个能够完成下面这些事情的智能体：
 
-- Search your codebase for files and patterns
-- Read and understand source code
-- Edit files with precision
-- Run shell commands and react to the output
-- Manage long conversations without running out of context
-- Ask for permission before doing dangerous things
-- Delegate work to sub-agents
-- Stream responses in real-time
-- Run multiple safe operations at the same time
+- 在代码库里搜索文件和模式
+- 读懂源代码
+- 精准地编辑文件
+- 执行 shell 命令并根据输出做出反应
+- 管理长对话而不至于把上下文撑爆
+- 做危险操作之前先请求权限
+- 把活儿分派给子代理
+- 实时流式输出回复
+- 同时跑多个安全的操作
 
-Each chapter adds one concept. Each comes with a runnable TypeScript example. You can follow along from start to finish, or jump to whatever interests you.
+每一章新增一个概念，每一章都配一个可运行的 TypeScript 示例。你可以从头跟到尾，也可以直接跳到自己感兴趣的部分。
 
-## A note on the AI provider
+## 关于 AI 提供方的说明
 
-The concepts in this guide work with any LLM that supports tool use (function calling). OpenAI, Google Gemini, Anthropic Claude, and others all support the same core pattern: you define tools, the model calls them, you return results.
+本指南里的概念适用于任何支持工具调用（function calling）的 LLM。OpenAI、Google Gemini、Anthropic Claude 等等，都支持同一套核心模式：你定义工具，模型调用它们，你把结果返回去。
 
-We use Claude and the Anthropic SDK in our examples because that is what we are most familiar with. But the architecture is the same regardless of which provider you use. If you prefer OpenAI, swap the SDK and the model name. The loop, the tools, the permissions, the compression... all of it stays the same.
+示例里我们用的是 Claude 和 Anthropic SDK，因为这是我们最熟的。但不管你用哪家，架构都一样。如果你更喜欢 OpenAI，换掉 SDK 和模型名就行。循环、工具、权限、压缩……这些统统不变。
 
-## What you need
+## 你需要准备什么
 
-- **Node.js 18 or later**
-- **An Anthropic API key** (used in our examples) - you can get one at [console.anthropic.com](https://console.anthropic.com/)
-- **Basic TypeScript knowledge** - you do not need to be an expert, but you should be comfortable reading TypeScript code
+- **Node.js 18 或更高版本**
+- **一个 Anthropic API key**（示例里用的）——可以在 [console.anthropic.com](https://console.anthropic.com/) 申请
+- **基本的 TypeScript 知识**——不用是专家，但你得能看懂 TypeScript 代码
 
-## Project setup
+## 项目搭建
 
-Clone this repo (or create the folder yourself), then install the dependencies:
+克隆这个仓库（或者自己建个文件夹），然后安装依赖：
 
 ```bash
 cd build-your-own-ai-coding-agent
 npm install
 ```
 
-Copy the environment file and add your API key:
+复制环境变量文件，填上你的 API key：
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and add your API key.
+打开 `.env`，把你的 API key 填进去。
 
-## The sample project
+## 示例项目
 
-Inside `sample-project/` there is a small React app with a few components. Our agent will operate on these files throughout the guide. You do not need to run the React app. The agent just reads and edits the files.
+`sample-project/` 里放了一个小小的 React 应用，带几个组件。整个指南里，我们的智能体就是在这些文件上干活。你不需要真的跑起来这个 React 应用，智能体只是读取和编辑这些文件而已。
 
-The sample project is intentionally tiny (3 files). This keeps token usage low. A typical session with the examples costs a few cents at most. When you try the examples, point the agent at `sample-project` in your prompts (e.g., "read the Button component in sample-project").
+这个示例项目故意做得很小（3 个文件），这样 token 用量就低。用这些示例跑一次会话，最多也就花几分钱。试用示例时，在提示词里让智能体指向 `sample-project`（比如："read the Button component in sample-project"）。
 
 ```
 sample-project/
@@ -64,24 +64,24 @@ sample-project/
 │       └── Header.tsx
 ```
 
-These are small, simple files on purpose. They give our agent something real to work with without adding complexity.
+这些文件故意做得小而简单，好让智能体有点真东西可操作，又不会徒增复杂度。
 
-## How to run the examples
+## 怎么运行示例
 
-Each chapter has a matching example file in `examples/`. Run them with:
+每一章在 `examples/` 里都有一个对应的示例文件。运行方式：
 
 ```bash
 npm run example:01
 ```
 
-The examples build on each other. Example 02 adds tools to the loop from example 01. Example 03 adds the edit tool on top of that. And so on.
+这些示例是层层叠加的。示例 02 在示例 01 的循环上加了工具，示例 03 又在此基础上加了编辑工具，以此类推。
 
-**How chapters and examples relate:** Each chapter explains the concepts and shows the important code, but does not walk through every line. The examples are complete, runnable files that include things like imports, error handling, and REPL setup that the chapters skip over. Think of the chapters as the "why and how" and the examples as the "full working version." Read the chapter first to understand the concept, then look at the example to see it all put together.
+**章节和示例的关系：**每一章讲清概念、展示关键代码，但不会逐行讲解。示例则是完整、可运行的文件，包含了 import、错误处理、REPL 搭建这些章节里略过的东西。你可以把章节当成"为什么、怎么做"，把示例当成"完整可用的版本"。先读章节理解概念，再看示例把一切拼到一起。
 
-One thing to note: some later examples focus on their chapter's concept and do not carry forward every feature from previous chapters. For example, the streaming example (09) does not include the permission system from Chapter 7. This is intentional to keep each example focused and readable. Each example file has a comment at the top noting which features are included and which are omitted. In a real agent, you would combine all of them.
+有一点要注意：有些靠后的示例只聚焦于本章的概念，并不会把前面章节的每个功能都带上。比如流式输出示例（09）就没有包含第 7 章的权限系统。这是故意的，为的是让每个示例保持聚焦、便于阅读。每个示例文件开头都有注释，标明包含了哪些功能、省略了哪些。真正的智能体里，你会把它们全部组合起来。
 
-You do not have to run every example. But if you want to see the concepts in action, they are there.
+你不必把每个示例都跑一遍。但如果你想看看这些概念实际跑起来的样子，它们都在那儿。
 
-## What is coming next
+## 接下来是什么
 
-In the next chapter, we will build the core of everything: the agentic loop. It is a `while` loop. Seriously. That is the entire foundation.
+下一章，我们要搭建一切的核心：智能体循环。它就是个 `while` 循环，真的。整个地基就这么点东西。

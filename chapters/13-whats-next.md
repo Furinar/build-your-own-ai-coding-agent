@@ -1,98 +1,98 @@
-# Chapter 13: What's Next
+# 第 13 章：接下来呢
 
-## What you built
+## 你构建了什么
 
-Over the last 12 chapters, you built a complete AI coding agent from scratch:
+在过去 12 章里，你从零构建了一个完整的 AI 编程智能体：
 
-| Chapter | What you added |
+| 章节 | 你加上了什么 |
 |---|---|
-| 1. Agentic Loop | The `while(true)` core. Model calls tools, gets results, decides what to do next. |
-| 2. Tools | Read, write, search, list, run commands. The model's eyes and hands. |
-| 3. Edit Tool | `string.replace()` with uniqueness validation. How AI actually edits files. |
-| 4. System Prompts | "Search before assuming. Read before editing." The instructions that shape behavior. |
-| 5. Context | Full conversation history sent each turn. Follow-ups work because context carries forward. |
-| 6. Compression | Truncation, clearing old results, LLM summarization. Keeping conversations alive when context runs out. |
-| 7. Permissions | Allow, ask, deny. A gate between the model's intentions and actual execution. |
-| 8. Subagents | Same loop, isolated context. Delegation without pollution. |
-| 9. Streaming | Token-by-token output. The model feels fast even when it is not. |
-| 10. Concurrency | Safe tools run in parallel. Unsafe tools run alone. |
-| 11. Web Access | Fetch URLs and search the web. The agent can read documentation and look things up. |
-| 12. Persistence | Save conversations to disk, resume later, project instructions that carry across sessions. |
+| 1. 智能体循环 | `while(true)` 内核。模型调用工具、拿到结果、决定下一步做什么。 |
+| 2. 工具 | 读、写、搜索、列目录、跑命令。模型的眼睛和双手。 |
+| 3. 编辑工具 | 带唯一性校验的 `string.replace()`。AI 真正是怎么改文件的。 |
+| 4. 系统提示词 | “假设之前先搜索，编辑之前先阅读。”塑造行为的那些指令。 |
+| 5. 上下文 | 每轮都发送完整的对话历史。追问之所以有效，是因为上下文一路带下来。 |
+| 6. 压缩 | 截断、清理旧结果、LLM 总结。上下文快用完时让对话活下去。 |
+| 7. 权限 | 允许、询问、拒绝。模型意图和实际执行之间的一道门。 |
+| 8. 子代理 | 同一个循环，隔离的上下文。委派任务却不污染上下文。 |
+| 9. 流式输出 | 逐 token 输出。哪怕模型其实没那么快，感觉上也很快。 |
+| 10. 并发 | 安全的工具并行跑，不安全的工具单独跑。 |
+| 11. 访问网络 | 抓取 URL、搜索网络。智能体能读文档、查资料。 |
+| 12. 持久化 | 把对话存到磁盘、之后恢复、跨会话延续的项目说明。 |
 
-These are the same core ideas behind production AI coding tools. The implementations are simplified, but the architecture is real.
+这些就是生产级 AI 编程工具背后的核心理念。实现是简化过的，但架构是真实的。
 
-## What production agents add
+## 生产级智能体还会加什么
 
-If you want to take this further, here are the areas where production tools invest heavily:
+如果你想再往前走，下面这些是生产级工具重点投入的方向：
 
-### MCP (Model Context Protocol)
+### MCP（Model Context Protocol，模型上下文协议）
 
-MCP is a standard for connecting AI models to external tools and data sources. Instead of hardcoding tools like we did, MCP lets users plug in tools from any provider. A database tool, a Jira integration, a custom API client. The model discovers available tools at runtime.
+MCP 是一个把 AI 模型连接到外部工具和数据源的标准。不像我们那样把工具写死，MCP 让用户能插入来自任何提供方的工具：数据库工具、Jira 集成、自定义 API 客户端。模型在运行时发现可用的工具。
 
 ```typescript
-// Instead of hardcoded tools:
+// 不再是写死的工具：
 const tools = [readFileTool, editFileTool, ...];
 
-// MCP lets users configure tools dynamically:
+// MCP 让用户动态配置工具：
 const tools = [
   ...builtInTools,
-  ...await loadMCPTools("./mcp-config.json"),  // user-provided tools
+  ...await loadMCPTools("./mcp-config.json"),  // 用户提供的工具
 ];
 ```
 
-The model does not care where the tool came from. It sees the same interface (name, description, input schema, call). MCP just standardizes how tools are discovered and loaded. See [modelcontextprotocol.io](https://modelcontextprotocol.io) for the spec.
+模型并不在乎工具是从哪来的。它看到的是同一套接口（名称、描述、输入 schema、调用）。MCP 只是把工具的发现和加载方式标准化了。规范见 [modelcontextprotocol.io](https://modelcontextprotocol.io)。
 
-### LSP (Language Server Protocol) integration
+### LSP（Language Server Protocol，语言服务器协议）集成
 
-Language servers provide diagnostics (type errors, lint warnings), code navigation (go to definition, find references), and auto-completion. Connecting your agent to an LSP means it can see the same errors your editor sees.
+语言服务器提供诊断信息（类型错误、lint 警告）、代码导航（跳转定义、查找引用）和自动补全。把智能体连上 LSP，意味着它能看到和你编辑器里一样的错误。
 
 ```typescript
-// After editing a file, check for errors:
+// 编辑文件之后，检查有没有错误：
 const diagnostics = await lspClient.getDiagnostics("src/App.tsx");
-// Returns: [{ line: 15, message: "Type 'string' is not assignable to type 'number'" }]
+// 返回：[{ line: 15, message: "Type 'string' is not assignable to type 'number'" }]
 
-// The agent sees the error and can fix it on the next turn
+// 智能体看到错误，可以在下一轮修掉它
 ```
 
-Without LSP, the agent would not know about type errors until someone runs the compiler. With LSP, it gets instant feedback after every edit.
+没有 LSP，智能体要等到有人跑编译器才知道类型错误。有了 LSP，它每次编辑之后都能立即得到反馈。
 
-### Git integration
+### Git 集成
 
-Production agents track changes with git. They can show diffs of what they changed, create commits, open pull requests, and revert if something goes wrong.
+生产级智能体用 git 跟踪改动。它们可以展示自己改了什么的 diff、创建提交、开 pull request，出问题还能回滚。
 
 ```typescript
-// After making edits, the agent can:
-await exec("git diff");           // Show what changed
-await exec("git add -A");         // Stage changes
-await exec("git commit -m '...'"); // Commit with a message
-await exec("git stash");          // Undo if something went wrong
+// 做完编辑后，智能体可以：
+await exec("git diff");           // 展示改了什么
+await exec("git add -A");         // 暂存改动
+await exec("git commit -m '...'"); // 带消息提交
+await exec("git stash");          // 出问题就撤销
 ```
 
-Git gives users confidence that they can always undo the agent's work. Some agents even create a commit before each edit so every change is reversible.
+Git 让用户有信心随时能撤销智能体的工作。有些智能体甚至在每次编辑前都先创建一个提交，这样每一处改动都可逆。
 
-### Multi-model strategies
+### 多模型策略
 
-Not every task needs the most powerful model. You can use different models for different jobs:
+不是每个任务都需要最强的模型。你可以针对不同的活儿用不同的模型：
 
 ```typescript
-// Main loop: powerful model for decision-making
+// 主循环：用强力模型做决策
 const mainModel = "claude-sonnet-4-20250514";
 
-// Summarization (Chapter 6): cheap model
+// 总结（第 6 章）：便宜模型
 const summaryModel = "claude-haiku-4-5-20251001";
 
-// Web fetch extraction (Chapter 11): cheap model
+// 网络抓取的内容提取（第 11 章）：便宜模型
 const extractionModel = "claude-haiku-4-5-20251001";
 
-// Exploration subagents (Chapter 8): can use a smaller model
+// 探索用的子代理（第 8 章）：可以用更小的模型
 const exploreModel = "claude-haiku-4-5-20251001";
 ```
 
-This reduces cost and latency. The main loop uses the best model for tool selection and code edits. Everything else uses a cheaper one.
+这能降低成本和延迟。主循环用最好的模型来选工具和改代码，其他一切都用便宜的。
 
-### Prompt caching
+### 提示词缓存
 
-When you send the same system prompt and conversation prefix on every API call, you pay for those tokens every time. Prompt caching stores the processed prefix on the server and reuses it across calls.
+当你每次 API 调用都发送同样的系统提示词和对话前缀时，这些 token 你每次都得付钱。提示词缓存把处理好的前缀存在服务端，跨调用复用。
 
 ```typescript
 const response = await client.messages.create({
@@ -101,44 +101,44 @@ const response = await client.messages.create({
     {
       type: "text",
       text: SYSTEM_PROMPT,
-      cache_control: { type: "ephemeral" },  // cache this block
+      cache_control: { type: "ephemeral" },  // 缓存这个块
     },
   ],
   // ...
 });
 ```
 
-The first call processes the full system prompt. Subsequent calls reuse the cached version. This saves both cost (cached tokens are cheaper) and latency (no re-processing).
+第一次调用处理完整的系统提示词。后续调用复用缓存的版本。这既省成本（缓存的 token 更便宜），又省延迟（不用重新处理）。
 
-### File watching
+### 文件监听
 
-When the user edits a file outside the agent (in their editor), the agent should notice. File watchers detect changes and can update the staleness cache in real time.
+当用户在智能体之外（在自己的编辑器里）改了文件，智能体应该察觉到。文件监听器检测改动，可以实时更新陈旧缓存。
 
 ```typescript
 import { watch } from "fs";
 
-// Watch the project directory for changes
+// 监听项目目录的改动
 watch("src/", { recursive: true }, (event, filename) => {
-  // Update the read timestamp so the agent knows the file changed
+  // 更新读取时间戳，让智能体知道文件变了
   readTimestamps.delete(path.resolve("src/", filename));
 });
 ```
 
-Without file watching, the agent relies on staleness checks at edit time (Chapter 3). With file watching, it knows immediately when files change.
+没有文件监听，智能体只能靠编辑时的陈旧检查（第 3 章）。有了文件监听，文件一变它立刻就知道。
 
-## Building a TUI
+## 构建一个 TUI
 
-Our examples use a simple readline prompt. Production agents like Claude Code have a full terminal UI (TUI) with colors, spinners, syntax highlighting, and interactive permission dialogs.
+我们的示例用的是一个简单的 readline 提示符。像 Claude Code 这样的生产级智能体有一个完整的终端界面（TUI），带颜色、加载动画、语法高亮，还有交互式的权限对话框。
 
-If you want to build a proper TUI, here are some libraries to look at:
+如果你想做一个像样的 TUI，这里有几个库可以看看：
 
-- **[Ink](https://github.com/vadimdemedes/ink)** - React for the terminal. Build terminal UIs with React components. This is what Claude Code uses.
-- **[Blessed](https://github.com/chjj/blessed)** - A curses-like library for Node.js. Lower level, more control.
-- **[Clack](https://github.com/bombshell-dev/clack)** - Beautiful prompts and spinners. Good for simpler CLIs.
-- **[@clack/prompts](https://github.com/bombshell-dev/clack)** - Interactive prompts (select, confirm, spinner) that look polished out of the box.
-- **[Charm](https://charm.sh/)** - Go-based TUI tools (Bubble Tea, Lip Gloss). If you prefer Go over TypeScript.
+- **[Ink](https://github.com/vadimdemedes/ink)** —— 终端里的 React。用 React 组件构建终端界面。Claude Code 用的就是它。
+- **[Blessed](https://github.com/chjj/blessed)** —— Node.js 的一个类 curses 库。更底层，控制力更强。
+- **[Clack](https://github.com/bombshell-dev/clack)** —— 漂亮的提示和加载动画。适合更简单的 CLI。
+- **[@clack/prompts](https://github.com/bombshell-dev/clack)** —— 交互式提示（选择、确认、加载动画），开箱即用就很精致。
+- **[Charm](https://charm.sh/)** —— 基于 Go 的 TUI 工具（Bubble Tea、Lip Gloss）。如果你比起 TypeScript 更喜欢 Go。
 
-With Ink, for example, your permission dialog could look like:
+比如用 Ink，你的权限对话框可以长这样：
 
 ```tsx
 function PermissionDialog({ toolName, input, onAllow, onDeny }) {
@@ -156,21 +156,21 @@ function PermissionDialog({ toolName, input, onAllow, onDeny }) {
 }
 ```
 
-A TUI is optional. The agent works the same with readline. But a good TUI makes the experience much nicer.
+TUI 是可选的。用 readline 智能体照样能跑。但一个好的 TUI 能让体验好得多。
 
-## Ideas for extensions
+## 扩展的点子
 
-If you want to keep building on what you have:
+如果你想在现有基础上继续构建：
 
-- **A todo/task tool** that lets the model track what it has done and what is left
-- **Git tools** (status, diff, commit, log) so the model can manage its own changes
-- **A diff viewer** that shows exactly what changed after each edit, in a readable format
-- **Custom tool plugins** where users can add their own tools without modifying the agent
-- **IDE integration** via VS Code extension or JetBrains plugin
+- **一个待办/任务工具**，让模型能跟踪自己做完了什么、还剩什么
+- **Git 工具**（status、diff、commit、log），让模型能管理自己的改动
+- **一个 diff 查看器**，每次编辑后以可读的方式精确展示改了什么
+- **自定义工具插件**，让用户能加自己的工具，而不用改动智能体本身
+- **IDE 集成**，通过 VS Code 扩展或 JetBrains 插件
 
-## The core idea
+## 核心理念
 
-Everything in this guide comes back to one simple idea:
+这份指南里的一切，都归结到一个简单的理念：
 
 ```
 while (true) {
@@ -184,6 +184,6 @@ while (true) {
 }
 ```
 
-The model's output becomes its own input. The loop is dumb. The model is smart. Everything else is just making that loop faster, safer, and more capable.
+模型的输出变成它自己的输入。循环是笨的，模型是聪明的。其他一切，不过是让这个循环更快、更安全、更能干而已。
 
-Now go build something.
+现在，去构建点什么吧。

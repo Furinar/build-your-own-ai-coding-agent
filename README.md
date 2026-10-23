@@ -1,68 +1,68 @@
-# Build Your Own AI Coding Agent From Scratch
+# 从零开始构建你自己的 AI 编程助手
 
-Ever wonder how AI coding tools like Claude Code and Cursor actually work under the hood? It is simpler than you think. The core is a while loop, some tools, and a few clever tricks.
+有没有好奇过 Claude Code、Cursor 这类 AI 编程工具底层到底是怎么跑起来的？其实比你想的要简单得多。核心就是一个 while 循环、几个工具，再加上一些巧妙的小技巧。
 
-This is a step-by-step guide that takes you from zero to a working AI coding agent. No frameworks. No magic. Just TypeScript and an LLM API. Each chapter introduces one concept, explains why it is designed that way, and comes with a runnable example you can try immediately.
+这是一份手把手的教程，带你从零搭建出一个能用的 AI 编程助手。没有框架，没有魔法，只有 TypeScript 和一个 LLM API。每一章讲一个概念，说清楚它为什么这么设计，并配一个可以立刻运行的示例。
 
-The concepts work with any LLM that supports tool use (Claude, GPT, Gemini, etc.). Our examples use Claude and the Anthropic SDK, but the architecture is provider-agnostic.
+这些概念适用于任何支持工具调用的 LLM（Claude、GPT、Gemini 等）。我们的示例用的是 Claude 和 Anthropic SDK，但整套架构与具体厂商无关。
 
-## Who is this for
+## 适合谁读
 
-- Developers curious about how AI coding tools work internally
-- Anyone who wants to build their own AI-powered dev tools
-- People who learn best by building, not just reading
+- 对 AI 编程工具内部原理感兴趣的开发者
+- 想自己动手做 AI 开发工具的人
+- 在动手中学得最快、而不只是看看的人
 
-You need basic TypeScript knowledge and an LLM API key. That is it.
+你只需要具备基础的 TypeScript 知识，以及一个 LLM API key。就这些。
 
-## What you will build
+## 你会做出什么
 
-A CLI tool that uses an LLM to read, search, edit files, and run commands. By the end, your agent will have streaming, permissions, subagents, context compression, and concurrent tool execution. The same core ideas behind tools like Claude Code, Cursor, and other AI coding assistants.
+一个命令行工具，它借助 LLM 来读取、搜索、编辑文件并执行命令。到教程结束时，你的助手会具备流式输出、权限控制、子代理、上下文压缩和并发工具执行等能力。这些正是 Claude Code、Cursor 以及其他 AI 编程助手背后的同一套核心思路。
 
-## Prerequisites
+## 前置条件
 
-- Node.js 18+
-- An Anthropic API key ([get one here](https://console.anthropic.com/)) - used in our examples, but the concepts apply to any LLM
-- Basic TypeScript knowledge
+- Node.js 18 及以上
+- 一个 Anthropic API key（[在这里获取](https://console.anthropic.com/)）——示例里用到，但这些概念对任何 LLM 都适用
+- 基础的 TypeScript 知识
 
-## Setup
+## 环境准备
 
 ```bash
 npm install
 cp .env.example .env
-# Add your API key to .env
+# 把你的 API key 填进 .env
 ```
 
-## Chapters
+## 章节
 
-| # | Chapter | What you will learn |
+| # | 章节 | 你会学到什么 |
 |---|---------|-------------------|
-| 00 | [Introduction](chapters/00-introduction.md) | What we are building and project setup |
-| 01 | [The Agentic Loop](chapters/01-agentic-loop.md) | The while(true) core that drives everything |
-| 02 | [Tools](chapters/02-tools.md) | Giving the model eyes and hands |
-| 03 | [The Edit Tool](chapters/03-edit-tool.md) | How AI actually edits files (it is simpler than you think) |
-| 04 | [System Prompts](chapters/04-system-prompts.md) | Teaching the model to search before it edits |
-| 05 | [Context](chapters/05-context.md) | How conversation history makes follow-ups work |
-| 06 | [Context Compression](chapters/06-context-compression.md) | Keeping conversations going when context runs out |
-| 07 | [Permissions](chapters/07-permissions.md) | Stopping the model from running rm -rf / |
-| 08 | [Subagents](chapters/08-subagents.md) | Delegating work to isolated child agents |
-| 09 | [Streaming](chapters/09-streaming.md) | Showing responses token by token |
-| 10 | [Concurrent Tools](chapters/10-concurrent-tools.md) | Running safe tools in parallel |
-| 11 | [Web Access](chapters/11-web-access.md) | Fetching URLs and searching the web |
-| 12 | [Persistence](chapters/12-persistence.md) | Saving conversations and project instructions |
-| 13 | [What's Next](chapters/13-whats-next.md) | Where to go from here |
+| 00 | [引言](chapters/00-introduction.md) | 我们要做什么，以及项目搭建 |
+| 01 | [智能体循环](chapters/01-agentic-loop.md) | 驱动一切的 while(true) 核心 |
+| 02 | [工具](chapters/02-tools.md) | 给模型装上眼睛和手 |
+| 03 | [编辑工具](chapters/03-edit-tool.md) | AI 到底是怎么改文件的（比你想的简单） |
+| 04 | [系统提示词](chapters/04-system-prompts.md) | 教会模型先搜索再编辑 |
+| 05 | [上下文](chapters/05-context.md) | 对话历史如何让追问得以成立 |
+| 06 | [上下文压缩](chapters/06-context-compression.md) | 上下文快满时让对话继续下去 |
+| 07 | [权限](chapters/07-permissions.md) | 别让模型执行 rm -rf / |
+| 08 | [子代理](chapters/08-subagents.md) | 把任务交给隔离的子代理 |
+| 09 | [流式输出](chapters/09-streaming.md) | 逐 token 地展示回复 |
+| 10 | [并发工具](chapters/10-concurrent-tools.md) | 让安全的工具并行执行 |
+| 11 | [访问网络](chapters/11-web-access.md) | 抓取 URL 和搜索网页 |
+| 12 | [持久化](chapters/12-persistence.md) | 保存对话和项目指令 |
+| 13 | [接下来呢](chapters/13-whats-next.md) | 下一步往哪走 |
 
-## Running examples
+## 运行示例
 
-Each chapter has a matching example file. Run them with:
+每一章都有一个对应的示例文件。这样运行：
 
 ```bash
 npm run example:01
 npm run example:02
-# ... and so on
+# ……以此类推
 ```
 
-Examples build on each other. Start from 01 and work your way up.
+示例是层层递进的。从 01 开始，一路往上做。
 
-## The sample project
+## 示例项目
 
-The `sample-project/` folder contains a small React app that the agent operates on. The examples use these files for reading, searching, and editing.
+`sample-project/` 文件夹里是一个小型 React 应用，供助手操作。示例会在这些文件上做读取、搜索和编辑。

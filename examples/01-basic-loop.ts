@@ -3,13 +3,13 @@ import * as readline from "readline";
 
 const client = new Anthropic();
 
-// A simple tool so we can see the loop in action.
-// The model can call this to "get the current time."
-// In the next chapter, we will add real tools like file reading and searching.
+// 一个简单的工具，方便我们直观地看到循环的运作。
+// 模型可以调用它来“获取当前时间”。
+// 下一章我们会加入真正的工具，比如文件读取和搜索。
 const tools: Anthropic.Tool[] = [
   {
     name: "get_time",
-    description: "Get the current date and time",
+    description: "获取当前的日期和时间",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -18,8 +18,8 @@ const tools: Anthropic.Tool[] = [
   },
 ];
 
-// Execute a tool by name.
-// Right now we only have one tool. This will grow in later chapters.
+// 按名称执行工具。
+// 目前我们只有一个工具，后续章节会不断扩充。
 function executeTool(name: string, _input: Record<string, unknown>): string {
   if (name === "get_time") {
     return new Date().toISOString();
@@ -27,9 +27,9 @@ function executeTool(name: string, _input: Record<string, unknown>): string {
   return `Unknown tool: ${name}`;
 }
 
-// --- The agentic loop ---
-// This is the core of everything. Call the model, check for tool use,
-// execute tools, push results back, repeat.
+// --- 智能体循环 ---
+// 这是一切的核心。调用模型、检查是否有工具调用、
+// 执行工具、把结果推回去，然后重复。
 async function agentLoop(
   conversationHistory: Anthropic.MessageParam[]
 ): Promise<string> {
@@ -42,32 +42,32 @@ async function agentLoop(
       return "[max turns reached]";
     }
 
-    // 1. Call the API with the full conversation history
+    // 1. 带上完整的对话历史调用 API
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "trae-internal/openrouter-3o",
       max_tokens: 4096,
       tools,
       messages: conversationHistory,
     });
 
-    // 2. Add the assistant's response to conversation history
+    // 2. 把助手的回复加入对话历史
     conversationHistory.push({ role: "assistant", content: response.content });
 
-    // 3. Check for tool use by looking at the content blocks.
-    //    Do NOT check stop_reason. It is not always reliable.
+    // 3. 通过检查内容块来判断是否有工具调用。
+    //    不要依赖 stop_reason，它并不总是可靠。
     const toolUseBlocks = response.content.filter(
       (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
     );
 
     if (toolUseBlocks.length === 0) {
-      // No tools called. The model is done. Extract text and return.
+      // 没有工具调用，说明模型已经完成。提取文本并返回。
       const textBlocks = response.content.filter(
         (block): block is Anthropic.TextBlock => block.type === "text"
       );
       return textBlocks.map((b) => b.text).join("\n");
     }
 
-    // 4. Execute each tool and collect results
+    // 4. 逐个执行工具并收集结果
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const toolUse of toolUseBlocks) {
@@ -85,12 +85,12 @@ async function agentLoop(
       });
     }
 
-    // 5. Push tool results back as a user message.
-    //    This is the key step. The model will see its own tool calls
-    //    and the results on the next iteration.
+    // 5. 把工具结果作为一条 user 消息推回去。
+    //    这是关键一步。模型会在下一轮迭代中看到它自己的工具调用
+    //    以及对应的结果。
     conversationHistory.push({ role: "user", content: toolResults });
 
-    // 6. Continue the loop. The model will decide what to do next.
+    // 6. 继续循环。模型会决定下一步做什么。
   }
 }
 
@@ -103,8 +103,8 @@ async function main() {
     output: process.stdout,
   });
 
-  console.log("Basic agentic loop. Type a message. Try 'what time is it?'");
-  console.log("Press Ctrl+C to exit.\n");
+  console.log("基础智能体循环。输入一条消息，试试 “现在几点了？”");
+  console.log("按 Ctrl+C 退出。\n");
 
   const ask = () => {
     rl.question("> ", async (input) => {

@@ -1,176 +1,176 @@
-# Tutorial Plan: Step-by-Step Guide
+# 教程规划：手把手指南
 
-This file is a plan for writing `TUTORIAL.md`, a single long-form tutorial where the reader builds an AI coding agent from scratch. Every line of code the reader sees, they type. No hidden code, no separate example files.
+这份文件是 `TUTORIAL.md` 的写作规划。`TUTORIAL.md` 是一篇完整的长教程，读者跟着它从零搭建一个 AI 编程助手。读者看到的每一行代码，都要自己亲手敲。没有藏起来的代码，也没有单独的示例文件。
 
-This is NOT a replacement for the existing chapters. The chapters are concept-focused reference material. The tutorial is a "type along and build" experience.
+它不是用来替代现有章节的。章节是以概念为主的参考资料，而教程是一种"边敲边搭"的体验。
 
-## Writing style
+## 写作风格
 
-- Explain architecture decisions (why readline, why while loop, why string.replace), not basic programming (what fs.readFileSync does)
-- Assume readers know TypeScript
-- Natural tone, not marketing. Say it once, clearly, move on. No "No API calls, no extra tokens, runs in milliseconds." Just "it just manipulates strings in memory, so it does not cost anything extra."
-- For utility code (tool implementations), briefly say what it does and show the code. Do not walk through every line. "This function reads a file and returns its content with line numbers:"
-- For architecture code (the loop, streaming, compression, permissions), explain WHY it is designed this way
-- Each section ends with "run it, you should see X" so the reader has a checkpoint
-- Plain English for non-native speakers. No emdash.
+- 解释架构上的取舍（为什么用 readline、为什么用 while 循环、为什么用 string.replace），而不是基础编程知识（fs.readFileSync 是干嘛的）
+- 默认读者懂 TypeScript
+- 语气自然，别像在打广告。一句话说清楚就往下走。别写"不调用 API，不消耗额外 token，毫秒级运行"这种，直接说"它只是在内存里操作字符串，所以不会有额外开销"就行
+- 对工具类代码（各个工具的实现），简单说一句它做什么、再把代码贴出来即可，不要逐行讲解。比如："这个函数读取文件，并返回带行号的内容："
+- 对架构类代码（循环、流式输出、压缩、权限），要讲清楚为什么这么设计
+- 每一节结尾都给一句"跑一下，你应该会看到 X"，让读者有个检查点
+- 用朴实的中文，照顾非母语读者。不要用破折号 emdash
 
-## The file being built
+## 正在搭建的文件
 
-The reader builds ONE file: `agent.ts`. It starts as 10 lines and grows to ~400 lines by the end. Each section adds code to this file.
+读者只搭一个文件：`agent.ts`。它从 10 行起步，到最后长到约 400 行。每一节都往这个文件里加代码。
 
-## Sections
+## 各节内容
 
-### 1. Setup (~100 words)
+### 1. 环境准备（约 100 字）
 
-- Create project folder, npm init, install deps (@anthropic-ai/sdk, zod, turndown, typescript, tsx)
-- Create tsconfig.json
-- Create .env with API key
-- Create agent.ts with just `console.log("hello")`
-- Run it: `npx tsx --env-file=.env agent.ts`
-- Checkpoint: see "hello" in terminal
+- 新建项目文件夹，npm init，装依赖（@anthropic-ai/sdk、zod、turndown、typescript、tsx）
+- 创建 tsconfig.json
+- 创建 .env 并填入 API key
+- 创建 agent.ts，里面只放一句 `console.log("hello")`
+- 运行：`npx tsx --env-file=.env agent.ts`
+- 检查点：终端里看到 "hello"
 
-### 2. The REPL (~200 words)
+### 2. REPL（约 200 字）
 
-- Import readline, create the prompt loop
-- Explain: "we need a way for users to type messages, readline gives us that"
-- The ask() pattern with rl.question
-- Checkpoint: run it, type something, see it echoed back
+- 引入 readline，搭起输入循环
+- 讲清楚："我们需要一种让用户输入消息的方式，readline 正好提供了这个"
+- 用 rl.question 的 ask() 模式
+- 检查点：跑起来，随便输点东西，看到它被原样回显
 
-Code at this point: ~20 lines
+此时代码：约 20 行
 
-### 3. Calling the API (~300 words)
+### 3. 调用 API（约 300 字）
 
-- Import Anthropic, create client
-- Inside the ask handler, call client.messages.create with the user's input
-- Print the response text
-- Explain: conversationHistory array, push user message, push assistant response
-- Show that follow-up messages work because history carries forward
-- Checkpoint: run it, type "hello", see AI response. Type a follow-up, see it remembers.
+- 引入 Anthropic，创建 client
+- 在 ask 处理函数里，用用户输入调用 client.messages.create
+- 打印返回的文本
+- 讲清楚：conversationHistory 数组，push 用户消息，push 助手回复
+- 展示追问之所以能工作，是因为历史一路带了下来
+- 检查点：跑起来，输入 "hello"，看到 AI 回复。再追问一句，看到它记得之前的内容。
 
-Code at this point: ~40 lines
+此时代码：约 40 行
 
-### 4. The agentic loop (~400 words)
+### 4. 智能体循环（约 400 字）
 
-- Explain: right now the model can only talk. We want it to DO things. That means tools.
-- Define one simple tool (get_time) with the JSON schema format
-- Explain what input_schema is (briefly, readers know JSON)
-- Add the while(true) loop: call API, check for tool_use blocks, execute, push results, continue
-- Explain: check content blocks not stop_reason (unreliable)
-- Add maxTurns safety limit
-- Extract agentLoop() as a function
-- Checkpoint: run it, ask "what time is it?", see it call the tool and respond
+- 讲清楚：现在模型只能说话，而我们想让它去"做事"。这就需要工具。
+- 定义一个简单的工具（get_time），用 JSON schema 格式
+- 简单说一下 input_schema 是什么（读者懂 JSON，点到为止）
+- 加上 while(true) 循环：调 API、检查 tool_use 块、执行、把结果 push 回去、继续
+- 讲清楚：检查 content 块，而不是 stop_reason（后者不可靠）
+- 加上 maxTurns 安全上限
+- 把 agentLoop() 抽成一个函数
+- 检查点：跑起来，问"现在几点？"，看到它调用工具并回答
 
-Code at this point: ~80 lines
+此时代码：约 80 行
 
-### 5. Real tools (~300 words)
+### 5. 真正的工具（约 300 字）
 
-- Replace get_time with real tools: read_file, write_file, list_files, search_files, run_command
-- Use Zod for input schemas, add zodToJsonSchema converter
-- Add the Tool interface (name, description, inputSchema, call)
-- Collect tools in an array, wire into the loop with tools.find()
-- Add input validation with safeParse
-- For each tool: brief description of what it does + the code. No line-by-line walkthrough.
-- search_files: wrap RegExp in try/catch (the security fix)
-- Checkpoint: run it, ask "what files are in this directory?", see it list files
+- 把 get_time 换成真正的工具：read_file、write_file、list_files、search_files、run_command
+- 用 Zod 写输入 schema，加一个 zodToJsonSchema 转换器
+- 加上 Tool 接口（name、description、inputSchema、call）
+- 把工具收进一个数组，用 tools.find() 接入循环
+- 用 safeParse 做输入校验
+- 每个工具：简单说一句它做什么，再贴代码。不要逐行讲。
+- search_files：把 RegExp 包进 try/catch（那个安全修复）
+- 检查点：跑起来，问"这个目录里有哪些文件？"，看到它列出文件
 
-Code at this point: ~170 lines
+此时代码：约 170 行
 
-### 6. The edit tool (~300 words)
+### 6. 编辑工具（约 300 字）
 
-- Add edit_file tool with string.replace
-- Explain why string.replace (not AST, not line numbers)
-- Uniqueness check: count with split().length - 1
-- Quote normalization with findActualString
-- Staleness detection with readTimestamps Map
-- Explain: production agents use callback replacement to avoid $1 patterns
-- Create a small test file to edit
-- Checkpoint: run it, ask "change X to Y in test file", see it edit the file
+- 加上 edit_file 工具，用 string.replace
+- 讲清楚为什么用 string.replace（而不是 AST，不是行号）
+- 唯一性检查：用 split().length - 1 计数
+- 用 findActualString 做引号归一化
+- 用 readTimestamps Map 做陈旧检测
+- 讲清楚：生产级的助手会用回调式替换，避开 $1 这类模式
+- 建一个小测试文件来编辑
+- 检查点：跑起来，让它"把测试文件里的 X 改成 Y"，看到它改了文件
 
-Code at this point: ~220 lines
+此时代码：约 220 行
 
-### 7. System prompt (~200 words)
+### 7. 系统提示词（约 200 字）
 
-- Add SYSTEM_PROMPT constant
-- Three rules: read before edit, search before assuming, understand before modifying
-- Pass system: SYSTEM_PROMPT in the API call
-- Add hints in tool descriptions
-- Explain: the prompt shapes behavior. Without it, the model guesses file paths. With it, it searches first.
-- Checkpoint: run it, ask something ambiguous, see the model search first instead of guessing
+- 加上 SYSTEM_PROMPT 常量
+- 三条规则：编辑前先读、假设前先搜、改动前先理解
+- 在 API 调用里传 system: SYSTEM_PROMPT
+- 在工具描述里加提示
+- 讲清楚：提示词塑造行为。没有它，模型会瞎猜文件路径；有了它，它会先搜索。
+- 检查点：跑起来，问一个含糊的问题，看到模型先搜索而不是瞎猜
 
-Code at this point: ~240 lines
+此时代码：约 240 行
 
-### 8. Context compression (~400 words)
+### 8. 上下文压缩（约 400 字）
 
-- Explain: every API call sends the full history. Tokens grow. Eventually hits the limit.
-- Add estimateTokens function (chars / 4)
-- Log token count each turn
-- Add truncateResult: cap tool results at 10k chars
-- Add clearOldResults: replace old tool results with "[Cleared]"
-- Add autoCompact: when tokens exceed threshold, make a side API call to summarize
-- Wire into the loop: compress before each API call
-- Explain: cheap layers first (string manipulation), expensive layer last (API call)
-- Checkpoint: have a long conversation, watch token counts drop when compression kicks in
+- 讲清楚：每次调 API 都会把完整历史发过去。token 越堆越多，迟早撞上上限。
+- 加一个 estimateTokens 函数（字符数 / 4）
+- 每一轮打印一次 token 数
+- 加 truncateResult：把工具结果截断到 1 万字符
+- 加 clearOldResults：把旧的工具结果替换成 "[Cleared]"
+- 加 autoCompact：token 超过阈值时，额外发一次 API 调用做摘要
+- 接入循环：每次调 API 前先压缩
+- 讲清楚：先上便宜的手段（字符串处理），最后才用贵的手段（API 调用）
+- 检查点：聊一段长对话，看到压缩触发时 token 数掉下来
 
-Code at this point: ~310 lines
+此时代码：约 310 行
 
-### 9. Streaming (~300 words)
+### 9. 流式输出（约 300 字）
 
-- Replace client.messages.create with client.messages.stream
-- Process events: content_block_start, content_block_delta, content_block_stop
-- Stream text with process.stdout.write
-- Buffer tool inputs with input_json_delta, parse on block stop
-- Explain: same loop, just incremental output instead of waiting for the full response
-- Mention thinking blocks briefly
-- Checkpoint: run it, see text appear word by word
+- 把 client.messages.create 换成 client.messages.stream
+- 处理事件：content_block_start、content_block_delta、content_block_stop
+- 用 process.stdout.write 流式输出文本
+- 用 input_json_delta 缓冲工具输入，在块结束时解析
+- 讲清楚：还是同一个循环，只是把文本逐步吐出来，而不是等完整回复
+- 顺带提一句 thinking 块
+- 检查点：跑起来，看到文字一个词一个词地冒出来
 
-Code at this point: ~350 lines
+此时代码：约 350 行
 
-### 10. Permissions (~200 words)
+### 10. 权限（约 200 字）
 
-- Add checkPermissions to Tool interface
-- read_file returns "allow", edit_file returns "ask", run_command checks the command
-- Add askUserPermission function with readline
-- Wire into the loop between tool detection and execution
-- Explain: this is the gate between what the model wants and what actually happens
-- Checkpoint: run it, ask it to edit a file, see the permission prompt
+- 在 Tool 接口里加 checkPermissions
+- read_file 返回 "allow"，edit_file 返回 "ask"，run_command 检查具体命令
+- 加一个用 readline 的 askUserPermission 函数
+- 接入循环，放在工具识别和执行之间
+- 讲清楚：这是模型"想做"和"真正发生"之间的那道闸
+- 检查点：跑起来，让它编辑一个文件，看到权限确认提示
 
-Code at this point: ~400 lines
+此时代码：约 400 行
 
-### 11. Done (~100 words)
+### 11. 收尾（约 100 字）
 
-- Recap what we built
-- Point to the chapters for deeper explanations of each concept
-- Point to the existing examples for features not covered (subagents, concurrency, web access, persistence)
-- "The loop is dumb. The model is smart. Now go build something."
+- 回顾我们搭了什么
+- 指向各章节，让读者深入了解每个概念
+- 指向现有示例，补上教程没覆盖的特性（子代理、并发、访问网络、持久化）
+- "循环很笨，模型很聪明。现在，去做点东西吧。"
 
-## What is NOT in the tutorial
+## 教程里不包含的内容
 
-These are covered in the chapters but skipped in the tutorial to keep it focused:
+下面这些章节里有，但教程为了保持聚焦而略去：
 
-- Subagents (adds complexity, not essential for a working agent)
-- Concurrent tool execution (optimization, not core)
-- Web access (additional feature)
-- Persistence (additional feature)
-- These are mentioned in the "Done" section with pointers to the chapters
+- 子代理（增加复杂度，对一个能用的助手来说不是必需的）
+- 并发工具执行（是优化，不是核心）
+- 访问网络（附加特性）
+- 持久化（附加特性）
+- 这些会在"收尾"一节里提到，并给出指向章节的链接
 
-## Checkpoints summary
+## 检查点汇总
 
-1. Setup: "hello" printed
-2. REPL: echo user input
-3. API: AI responds to "hello"
-4. Loop: model calls get_time tool
-5. Tools: model lists files
-6. Edit: model edits a file
-7. System prompt: model searches before editing
-8. Compression: token counts drop
-9. Streaming: text appears word by word
-10. Permissions: user approves an edit
+1. 环境准备：打印出 "hello"
+2. REPL：回显用户输入
+3. API：AI 回复 "hello"
+4. 循环：模型调用 get_time 工具
+5. 工具：模型列出文件
+6. 编辑：模型编辑一个文件
+7. 系统提示词：模型先搜索再编辑
+8. 压缩：token 数掉下来
+9. 流式输出：文字一个词一个词地冒出来
+10. 权限：用户批准一次编辑
 
-## How to write it
+## 怎么写
 
-- Write in one pass, section by section
-- After each section, show the FULL current state of agent.ts (since code accumulates)
-- Or show only the diff/additions with clear markers like "add this after the imports:" and "replace the agentLoop function with:"
-- The second approach is better for readability (no repeated code) but the reader needs to know where to put things
-- Use "add this" for new code, "replace X with" for modifications
-- At key checkpoints, show the full file so the reader can verify they are on track
+- 一遍写完，一节一节来
+- 每节之后，展示 agent.ts 当前的完整状态（因为代码是累加的）
+- 或者只展示 diff/新增部分，用清晰的标记，比如"在 imports 后面加上这些："和"把 agentLoop 函数替换成："
+- 第二种方式可读性更好（不用重复贴代码），但读者得知道把东西放在哪
+- 新代码用"加上这些"，改动用"把 X 替换成"
+- 在关键检查点处，展示完整文件，方便读者核对自己有没有跟上

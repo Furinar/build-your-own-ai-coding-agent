@@ -1,199 +1,199 @@
-# Chapter 4: System Prompts
+# 第 4 章：系统提示词
 
-## The problem
+## 问题所在
 
-Our agent can search, read, and edit files. But it does not always make smart choices. Sometimes it guesses file paths instead of searching. Sometimes it tries to edit a file without reading it first. Sometimes it jumps to conclusions based on the file name without understanding the code.
+我们的智能体能搜、能读、能编辑文件了。但它并不总是做出聪明的选择。有时它不去搜索，而是猜文件路径。有时它想编辑一个文件却没先读它。有时它光看文件名就下结论，根本没看懂代码。
 
-The model is powerful, but it needs instructions on *how* to use that power. That is what the system prompt does.
+模型很强大，但它需要有人指点*怎么*去用这份强大。这就是系统提示词的职责。
 
-## What is a system prompt?
+## 什么是系统提示词？
 
-When you call an LLM API, you can send three kinds of content:
+调用 LLM API 时，你可以发三类内容：
 
-- **System prompt**: Instructions that define how the model should behave. The model reads these before anything else. Think of it as the model's job description.
-- **User messages**: What the user says.
-- **Assistant messages**: What the model previously said (conversation history).
+- **系统提示词**：定义模型应当如何行事的指令。模型在干别的之前先读它。可以把它当成模型的岗位说明书。
+- **用户消息**：用户说的话。
+- **助手消息**：模型之前说过的话（对话历史）。
 
-The system prompt is where you put rules like "always read a file before editing it" or "be concise." The user never sees the system prompt. The model sees it on every API call.
+系统提示词就是你放规则的地方，比如"编辑文件前永远先读它"或者"简洁点"。用户看不到系统提示词，但模型每次 API 调用都会看到它。
 
-A simple example:
+一个简单的例子：
 
 ```typescript
 const response = await client.messages.create({
   model: "claude-sonnet-4-20250514",
   max_tokens: 4096,
-  system: "You are a coding assistant. Be concise.",  // <-- system prompt
+  system: "你是一个编程助手。简洁点。",  // <-- 系统提示词
   messages: conversationHistory,
 });
 ```
 
-That one line changes how the model responds. Without it, the model is a general assistant. With it, the model knows it is a coding assistant and should keep things short. The more specific your instructions, the more predictable the behavior.
+就这一行，改变了模型回复的方式。没有它，模型是个通用助手。有了它，模型知道自己是个编程助手，该把话说短。你的指令越具体，行为就越可预测。
 
-## Walkthrough: How does the model know which file to edit?
+## 走一遍：模型怎么知道该编辑哪个文件？
 
-A user types: "Fix the login bug."
+用户输入："修一下登录的 bug。"
 
-Without a system prompt, the model might do this:
-
-```
-Turn 1: edit_file({ file_path: "src/login.js", old_string: "...", new_string: "..." })
-        Error: File not found
-Turn 2: edit_file({ file_path: "src/Login.tsx", old_string: "...", new_string: "..." })
-        Error: File not found
-Turn 3: "I couldn't find the login file. Can you tell me the path?"
-```
-
-It guessed. Twice. Then gave up.
-
-With a good system prompt, the same request looks like this:
+没有系统提示词，模型可能会这么干：
 
 ```
-Turn 1:  [tool] list_files({ directory: "src" })
+回合 1: edit_file({ file_path: "src/login.js", old_string: "...", new_string: "..." })
+        错误: 文件未找到
+回合 2: edit_file({ file_path: "src/Login.tsx", old_string: "...", new_string: "..." })
+        错误: 文件未找到
+回合 3: "我找不到登录相关的文件。能告诉我路径吗？"
+```
+
+它猜了，猜了两次，然后放弃了。
+
+有了一段好的系统提示词，同样的请求看起来是这样：
+
+```
+回合 1:  [tool] list_files({ directory: "src" })
          [result] src/App.tsx, src/pages/LoginPage.tsx, src/pages/Dashboard.tsx,
                   src/components/LoginForm.tsx, src/auth/useAuth.ts, ...
 
-Turn 2:  [tool] search_files({ pattern: "login|Login", directory: "src" })
+回合 2:  [tool] search_files({ pattern: "login|Login", directory: "src" })
          [result] src/pages/LoginPage.tsx:5: export function LoginPage() {
                   src/components/LoginForm.tsx:3: export function LoginForm() {
                   src/auth/useAuth.ts:12: async function login(email, password) {
 
-Turn 3:  [tool] read_file({ file_path: "src/components/LoginForm.tsx" })
-         [result] (file contents...)
+回合 3:  [tool] read_file({ file_path: "src/components/LoginForm.tsx" })
+         [result] （文件内容……）
 
-Turn 4:  [tool] read_file({ file_path: "src/auth/useAuth.ts" })
-         [result] (file contents...)
+回合 4:  [tool] read_file({ file_path: "src/auth/useAuth.ts" })
+         [result] （文件内容……）
 
-Turn 5:  [tool] edit_file({ file_path: "src/auth/useAuth.ts", ... })
+回合 5:  [tool] edit_file({ file_path: "src/auth/useAuth.ts", ... })
          [result] Edited src/auth/useAuth.ts
 
-Turn 6:  [text] "I found the bug in useAuth.ts. The login function was not..."
+回合 6:  [text] "我在 useAuth.ts 里找到了 bug。login 函数没有……"
 ```
 
-The model started broad (list files), narrowed down (search for "login"), read the relevant files, and then made its edit. It went from 12 candidate files to 3 matches to 2 reads to 1 edit. A search funnel.
+模型从宽处起步（列文件），逐步收窄（搜"login"），读了相关文件，然后做了编辑。它从 12 个候选文件，到 3 处匹配，到 2 次读取，再到 1 次编辑。一个搜索漏斗。
 
-The difference? The system prompt told it: "Search before assuming. Read before editing."
+区别在哪？系统提示词告诉了它："先搜，别假设。先读，再编辑。"
 
-## The three rules that matter most
+## 最要紧的三条规则
 
-After studying how production AI coding agents work, three rules make the biggest difference:
+研究了生产级 AI 编程智能体的工作方式之后，有三条规则起的作用最大：
 
-### 1. Read before edit
+### 1. 先读再编辑
 
-> "Do not propose changes to code you have not read. If a user asks you to modify a file, read it first. Understand existing code before suggesting modifications."
+> "不要对你没读过的代码提出改动。如果用户让你改一个文件，先读它。在建议改动之前理解已有的代码。"
 
-This prevents the model from guessing what is in a file. It forces the model to look at the actual code before making changes. The model's training data does not contain your code. It has to read it.
+这能防止模型去猜文件里有什么，逼着它在改动前看实际的代码。模型的训练数据里没有你的代码，它必须去读。
 
-### 2. Search before assuming
+### 2. 先搜再假设
 
-> "Use list_files and search_files to find things instead of guessing paths. Never assume a file exists at a specific path."
+> "用 list_files 和 search_files 去查东西，而不是猜路径。永远别假设某个文件就在某个特定路径上。"
 
-File paths are the number one thing the model gets wrong. It knows common patterns (`src/components/Button.tsx`) but your project might use `app/ui/button.component.ts` or `lib/Button/index.js`. Searching is always better than guessing.
+文件路径是模型最容易搞错的头号问题。它知道常见的模式（`src/components/Button.tsx`），但你的项目可能用的是 `app/ui/button.component.ts` 或 `lib/Button/index.js`。搜索永远比猜要好。
 
-### 3. Understand before modifying
+### 3. 先理解再修改
 
-> "When given a task, first explore the codebase to understand the relevant files and patterns. Then make your changes."
+> "拿到一个任务时，先探索代码库，理解相关的文件和模式，然后再做改动。"
 
-This prevents the model from making changes that conflict with existing patterns. If your project uses Tailwind and the model adds inline styles, that is a bad edit even if it "works."
+这能防止模型做出与已有模式相冲突的改动。如果你的项目用 Tailwind，而模型加了内联样式，那就是个糟糕的编辑——哪怕它"能跑"。
 
-## Building the system prompt
+## 搭建系统提示词
 
-Here is a complete system prompt that covers the essential behaviors:
+下面是一段完整的系统提示词，涵盖了那些必备的行为：
 
 ```typescript
-const SYSTEM_PROMPT = `You are a coding assistant that helps users with software engineering tasks. You have access to tools for reading, searching, editing files, and running commands.
+const SYSTEM_PROMPT = `你是一个编程助手，帮助用户完成软件工程任务。你可以使用一些工具来读取、搜索、编辑文件以及运行命令。
 
-# How to work
+# 如何工作
 
-- When given a task, start by understanding the codebase. Use list_files and search_files to find relevant files before making changes.
-- Always read a file before editing it. Never guess what is in a file.
-- Use search_files to find code patterns, function definitions, and usage across the project.
-- When you find multiple candidate files, read them to understand which one is relevant to the task.
+- 拿到任务时，先从理解代码库入手。在做改动之前，用 list_files 和 search_files 找到相关的文件。
+- 编辑文件前永远先读它。绝不要猜文件里有什么。
+- 用 search_files 在整个项目里查找代码模式、函数定义和使用情况。
+- 当你找到多个候选文件时，读一读它们，弄清哪一个和任务相关。
 
-# How to edit files
+# 如何编辑文件
 
-- Use the edit_file tool for modifications. Provide enough context in old_string to make the match unique.
-- For new files, use write_file.
-- After making edits, verify your changes make sense in context.
+- 用 edit_file 工具做修改。在 old_string 里提供足够的上下文，让匹配唯一。
+- 对新文件，用 write_file。
+- 做完编辑后，验证你的改动在上下文里是否说得通。
 
-# How to handle ambiguity
+# 如何处理歧义
 
-- If the user's request is ambiguous (e.g., "fix the button" when there are multiple buttons), ask which one they mean.
-- If you are unsure about the right approach, explain your plan before making changes.
+- 如果用户的请求有歧义（比如有多个按钮时说"修一下这个按钮"），问清楚他们指的是哪一个。
+- 如果你拿不准正确的做法，先说明你的计划，再做改动。
 
-# Communication
+# 沟通
 
-- Be concise. Show what you changed, not everything you considered.
-- When reporting edits, mention the file path and what was changed.`;
+- 简洁点。展示你改了什么，而不是你考虑过的一切。
+- 汇报编辑时，提一下文件路径和改了什么。`;
 ```
 
-This is about 50 lines. Production agents have system prompts that are thousands of lines, covering edge cases, safety rules, output formatting, and more. But these 50 lines give you 80% of the benefit.
+这大概 50 行。生产级智能体的系统提示词有几千行，覆盖各种边界情况、安全规则、输出格式等等。但这 50 行能给你 80% 的收益。
 
-## What each section does
+## 每一节是干什么的
 
-**"How to work"** is the most important section. It tells the model to search and read before acting. Without it, the model skips straight to editing and often fails.
+**"如何工作"**是最重要的一节。它告诉模型先搜、先读，再行动。没有它，模型会径直跳到编辑，然后经常失败。
 
-**"How to edit files"** gives the model specific guidance on using the edit tool. "Provide enough context in old_string" directly reduces the "multiple matches" error we covered in Chapter 3.
+**"如何编辑文件"**给模型使用编辑工具的具体指导。"在 old_string 里提供足够的上下文"直接减少了我们在第 3 章讲过的"多处匹配"错误。
 
-**"How to handle ambiguity"** prevents the model from making assumptions. "Fix the button" is a common kind of request. If there are three buttons, the model should ask which one, not guess.
+**"如何处理歧义"**防止模型瞎假设。"修一下这个按钮"是一类常见的请求。如果有三个按钮，模型应该问是哪一个，而不是猜。
 
-**"Communication"** keeps the output focused. Without this, the model tends to explain every single step in detail, which gets noisy.
+**"沟通"**让输出保持聚焦。没有这一节，模型往往会把每一步都详细解释一遍，变得很啰嗦。
 
-## The system prompt is sent every turn
+## 系统提示词每个回合都会发送
 
-One thing to remember: the agentic loop makes multiple API calls per user message (one for each tool call cycle). The system prompt is sent with every one of those calls. The model sees it fresh each time. This means your rules are always in front of the model, even on turn 15 of a long conversation.
+有一点要记住：智能体循环对每条用户消息会做多次 API 调用（每个工具调用周期一次）。系统提示词随着这些调用的每一次一起发送。模型每次都重新看到它。这意味着你的规则始终摆在模型面前，哪怕是在一段长对话的第 15 个回合。
 
-## Adding tool-specific hints
+## 加上工具专属的提示
 
-You can also add hints in each tool's description. These are smaller, focused instructions that the model sees when deciding which tool to use:
+你也可以在每个工具的描述里加提示。这些是更小、更聚焦的指令，模型在决定用哪个工具时会看到：
 
 ```typescript
 const readFileTool = {
   name: "read_file",
   description:
-    "Read the contents of a file. Always read a file before editing it. " +
-    "Returns the file content with line numbers.",
+    "读取一个文件的内容。编辑文件前永远先读它。" +
+    "返回带行号的文件内容。",
   // ...
 };
 
 const editFileTool = {
   name: "edit_file",
   description:
-    "Edit a file by replacing old_string with new_string. " +
-    "The old_string must appear exactly once in the file. " +
-    "Include enough surrounding context to make the match unique. " +
-    "You must read a file before editing it.",
+    "通过把 old_string 替换为 new_string 来编辑一个文件。" +
+    "old_string 必须在文件里恰好出现一次。" +
+    "包含足够多的上下文，让匹配唯一。" +
+    "编辑文件前你必须先读它。",
   // ...
 };
 ```
 
-The "You must read a file before editing it" hint in the edit tool description reinforces the system prompt rule. The model sees this hint right when it is considering an edit. Double reinforcement.
+编辑工具描述里那句"编辑文件前你必须先读它"，强化了系统提示词里的规则。模型恰好在它考虑做编辑的时候看到这个提示。双重强化。
 
-## The search funnel
+## 搜索漏斗
 
-The system prompt creates a pattern we can call the "search funnel." It works like this:
+系统提示词造就了一个我们可以称之为"搜索漏斗"的模式。它是这样运转的：
 
 ```
-list_files (broad)     ->  12 files found
-search_files (narrow)  ->  3 files match
-read_file (confirm)    ->  1 file is the right one
-edit_file (act)        ->  done
+list_files（宽）     ->  找到 12 个文件
+search_files（窄）   ->  3 个文件匹配
+read_file（确认）    ->  1 个文件是对的那个
+edit_file（动手）    ->  完成
 ```
 
-The model starts broad and narrows down. Each step reduces uncertainty. By the time it makes an edit, it knows exactly what it is editing and why.
+模型从宽处起步，逐步收窄。每一步都在降低不确定性。等到它做编辑时，它清楚地知道自己在编辑什么、为什么。
 
-Without the system prompt, the model skips the funnel and jumps straight to editing. Sometimes it gets lucky. Most of the time it does not.
+没有系统提示词，模型会跳过漏斗，径直跳到编辑。有时它走运，大多数时候不走运。
 
-## What is still missing
+## 还缺什么
 
-The system prompt helps the model behave correctly on each turn. But what about across turns? If the model read a file 10 turns ago, does it remember? How does context carry over between turns? That is what we will cover in the next chapter.
+系统提示词帮模型在每个回合里都正确行事。但跨回合呢？如果模型 10 个回合前读了一个文件，它还记得吗？上下文怎么在回合之间传递？这就是下一章要讲的内容。
 
-## Running the example
+## 运行示例
 
 ```bash
 npm run example:04
 ```
 
-Try prompts like:
-- "Fix the button" (it should ask which button or search first)
-- "What components does this project have?" (it should list and read files)
-- "Change the heading size to text-4xl in sample-project" (it should search, read, then edit)
+试试这些提示词：
+- "Fix the button"（它应该问是哪个按钮，或者先搜索）
+- "What components does this project have?"（它应该列出并读取文件）
+- "Change the heading size to text-4xl in sample-project"（它应该先搜、再读、然后编辑）
