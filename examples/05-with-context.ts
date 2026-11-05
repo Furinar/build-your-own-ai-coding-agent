@@ -95,7 +95,7 @@ const editFileTool: Tool = {
 
     const updated = replace_all
       ? content.split(actual).join(new_string)
-      : content.replace(actual, new_string);
+      : content.replace(actual, () => new_string);
     fs.writeFileSync(file_path, updated);
     readTimestamps.set(resolved, Date.now());
     return `Edited ${file_path}`;

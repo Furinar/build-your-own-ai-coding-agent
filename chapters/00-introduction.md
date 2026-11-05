@@ -28,7 +28,7 @@
 
 ## 你需要准备什么
 
-- **Node.js 18 或更高版本**
+- **Node.js 22.9 或更高版本**（启动命令使用内置环境文件参数）
 - **一个 Anthropic API key**（示例里用的）——可以在 [console.anthropic.com](https://console.anthropic.com/) 申请
 - **基本的 TypeScript 知识**——不用是专家，但你得能看懂 TypeScript 代码
 

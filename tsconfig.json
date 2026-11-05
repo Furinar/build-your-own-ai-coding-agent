@@ -6,7 +6,9 @@
     "esModuleInterop": true,
     "strict": true,
     "outDir": "dist",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
-  "include": ["examples/**/*.ts"]
+  "include": ["examples/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"]
 }

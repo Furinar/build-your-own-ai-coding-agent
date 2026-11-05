@@ -75,7 +75,7 @@ const editFileTool: Tool = {
     const resolved = path.resolve(file_path);
     const lastRead = readTimestamps.get(resolved);
     if (lastRead) { try { if (fs.statSync(file_path).mtimeMs > lastRead) return "Error: file modified since last read."; } catch {} }
-    const updated = replace_all ? content.split(actual).join(new_string) : content.replace(actual, new_string);
+    const updated = replace_all ? content.split(actual).join(new_string) : content.replace(actual, () => new_string);
     fs.writeFileSync(file_path, updated);
     readTimestamps.set(resolved, Date.now());
     return `Edited ${file_path}`;

@@ -103,7 +103,7 @@ const tools: Tool[] = [
       const a = findActualString(c, os);
       if (!a) return "Error: not found in file.";
       if (!ra && c.split(a).length - 1 > 1) return "Error: multiple matches.";
-      const u = ra ? c.split(a).join(ns) : c.replace(a, ns);
+      const u = ra ? c.split(a).join(ns) : c.replace(a, () => ns);
       fs.writeFileSync(fp, u);
       readTimestamps.set(path.resolve(fp), Date.now());
       return `Edited ${fp}`;
@@ -283,21 +283,24 @@ const tools: Tool[] = [
           ],
         });
 
-        // 从响应中提取结果
+        // 只有服务端搜索结果块才是搜索证据；普通文本不能证明搜索实际发生。
         const parts: string[] = [];
+        let hasSearchResult = false;
         for (const block of response.content) {
           if ((block as any).type === "web_search_tool_result") {
+            hasSearchResult = true;
             const content = (block as any).content;
             if (Array.isArray(content)) {
               for (const result of content) {
                 parts.push(`- ${result.title}: ${result.url}`);
               }
+            } else {
+              return `Error: 服务端搜索失败：${content?.error_code ?? "未知错误"}`;
             }
-          } else if (block.type === "text") {
-            parts.push(block.text);
           }
         }
 
+        if (!hasSearchResult) return "Error: 当前模型或网关未返回服务端搜索结果，无法确认搜索发生。请使用支持 Anthropic web_search 的模型，或用 web_fetch 读取已知 URL。";
         return parts.join("\n") || "No results found.";
       } catch (e: any) {
         return `Error searching: ${e.message}`;

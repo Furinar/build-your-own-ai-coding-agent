@@ -78,7 +78,7 @@ const tools: Tool[] = [
       const a = findActualString(c, os);
       if (!a) return "Error: not found in file.";
       if (!ra && c.split(a).length - 1 > 1) return "Error: multiple matches.";
-      const u = ra ? c.split(a).join(ns) : c.replace(a, ns);
+      const u = ra ? c.split(a).join(ns) : c.replace(a, () => ns);
       fs.writeFileSync(fp, u);
       readTimestamps.set(path.resolve(fp), Date.now());
       return `Edited ${fp}`;

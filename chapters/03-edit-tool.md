@@ -137,6 +137,8 @@ const editFileTool: Tool = {
 
 还有一个 `replace_all` 选项，用于你确实想替换每一处出现的情况。但默认是要求唯一性的，这能防止误改。
 
+单处替换使用回调：`content.replace(actualString, () => newString)`。直接传字符串时，JavaScript 会把 `$&`、`$1` 等当作替换语法；模型给出的新代码应按原文写入，回调能保留这些字符。
+
 ## 校验流程
 
 ```mermaid

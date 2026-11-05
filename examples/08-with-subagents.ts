@@ -85,7 +85,7 @@ const baseTools: Tool[] = [
       const actual = findActualString(content, old_string);
       if (!actual) return "Error: old_string not found.";
       if (!replace_all && content.split(actual).length - 1 > 1) return "Error: multiple matches.";
-      const updated = replace_all ? content.split(actual).join(new_string) : content.replace(actual, new_string);
+      const updated = replace_all ? content.split(actual).join(new_string) : content.replace(actual, () => new_string);
       fs.writeFileSync(file_path, updated);
       readTimestamps.set(path.resolve(file_path), Date.now());
       return `Edited ${file_path}`;

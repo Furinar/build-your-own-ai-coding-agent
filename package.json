@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Learn how to build an AI coding agent from scratch",
   "type": "module",
+  "engines": { "node": ">=22.9.0" },
   "scripts": {
     "example:01": "tsx --env-file=.env examples/01-basic-loop.ts",
     "example:02": "tsx --env-file=.env examples/02-with-tools.ts",
@@ -15,14 +16,33 @@
     "example:09": "tsx --env-file=.env examples/09-with-streaming.ts",
     "example:10": "tsx --env-file=.env examples/10-with-concurrency.ts",
     "example:11": "tsx --env-file=.env examples/11-with-web-access.ts",
-    "example:12": "tsx --env-file=.env examples/12-with-persistence.ts"
+    "example:12": "tsx --env-file=.env examples/12-with-persistence.ts",
+    "example:14": "tsx --env-file=.env examples/14-with-hooks.ts",
+    "example:15": "tsx --env-file=.env examples/15-with-todos.ts",
+    "example:16": "tsx --env-file=.env examples/16-with-skills.ts",
+    "example:17": "tsx --env-file=.env examples/17-with-task-board.ts",
+    "example:18": "tsx --env-file=.env examples/18-with-background.ts",
+    "example:19": "tsx --env-file=.env examples/19-with-cron.ts",
+    "example:20": "tsx --env-file=.env examples/20-with-teams.ts",
+    "example:21": "tsx --env-file=.env examples/21-with-mcp.ts",
+    "example:22": "tsx --env-file=.env examples/22-with-workflows.ts",
+    "example:23": "tsx --env-file=.env examples/23-with-goals.ts",
+    "example:24": "tsx --env-file=.env examples/24-integrated-agent.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "pnpm run typecheck && pnpm test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "turndown": "^7.2.0",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "yaml": "^2.7.0",
+    "cron-parser": "^5.3.0",
+    "@modelcontextprotocol/sdk": "^1.12.0"
   },
   "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/turndown": "^5.0.5",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

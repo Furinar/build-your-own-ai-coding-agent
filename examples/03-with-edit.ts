@@ -147,7 +147,7 @@ const editFileTool: Tool = {
     // 7. 应用编辑
     const updated = replaceAll
       ? content.split(actualString).join(newString)
-      : content.replace(actualString, newString);
+      : content.replace(actualString, () => newString);
 
     fs.writeFileSync(filePath, updated);
 

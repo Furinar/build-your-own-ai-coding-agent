@@ -2,3 +2,8 @@ node_modules/
 dist/
 .env
 .agent/
+*.tsbuildinfo
+.tasks/
+.runtime/
+.team/
+.worktrees/
