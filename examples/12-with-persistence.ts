@@ -1,9 +1,10 @@
 // 本示例聚焦于: 持久化(第 12 章)。
-// 包含: 工具(第 2 章)、编辑(第 3 章)、系统提示词(第 4 章)、流式(第 9 章)。
-// 省略: 权限(第 7 章)、子代理(第 8 章)、压缩(第 6 章)、并发(第 10 章)、
+// 包含: 工具(第 2 章)、编辑(第 3 章)、系统提示词(第 4 章)、压缩(第 6 章)、流式(第 9 章)。
+// 省略: 权限(第 7 章)、子代理(第 8 章)、并发(第 10 章)、
 //        网络访问(第 11 章),让代码专注于持久化。
 
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory, replaceHistory } from "./context";
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
@@ -66,9 +67,12 @@ function buildSystemPrompt(): string {
 }
 
 // --- 会话保存/加载 ---
-function saveMessage(message: Anthropic.MessageParam): void {
+function saveSession(messages: Anthropic.MessageParam[]): void {
   fs.mkdirSync(AGENT_DIR, { recursive: true });
-  fs.appendFileSync(SESSION_FILE, JSON.stringify(message) + "\n");
+  // JSONL 只是编码格式；文件始终是当前工作历史的快照。
+  const temporary = SESSION_FILE + ".tmp";
+  fs.writeFileSync(temporary, messages.map((message) => JSON.stringify(message)).join("\n") + "\n");
+  fs.renameSync(temporary, SESSION_FILE);
 }
 
 function loadSession(): Anthropic.MessageParam[] {
@@ -269,6 +273,12 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
     turns++;
     if (turns > maxTurns) return "[max turns reached]";
 
+    await compressWorkingHistory(messages, {
+      model: { create: (request, options) => client.messages.create(request, options) },
+      modelName: MODEL,
+      log: console.log,
+    });
+    saveSession(messages);
     const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 4096,
@@ -323,10 +333,10 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
     // 保存 assistant 消息
     const assistantMsg: Anthropic.MessageParam = { role: "assistant", content: contentBlocks };
     messages.push(assistantMsg);
-    saveMessage(assistantMsg);
 
     const toolBlocks = contentBlocks.filter((b: any) => b.type === "tool_use") as Anthropic.ToolUseBlock[];
     if (toolBlocks.length === 0) {
+      saveSession(messages);
       process.stdout.write("\n");
       return contentBlocks.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
     }
@@ -357,7 +367,8 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
     // 保存工具结果
     const toolResultMsg: Anthropic.MessageParam = { role: "user", content: toolResults };
     messages.push(toolResultMsg);
-    saveMessage(toolResultMsg);
+    // 工具调用和结果成对落盘，避免恢复到缺少结果的状态。
+    saveSession(messages);
   }
 }
 
@@ -401,7 +412,7 @@ async function main() {
         if (loaded.length === 0) {
           console.log("未找到之前的会话。\n");
         } else {
-          conversationHistory.push(...loaded);
+          replaceHistory(conversationHistory, loaded);
           console.log(`已从之前的会话加载 ${loaded.length} 条消息。\n`);
         }
         return ask();
@@ -427,7 +438,7 @@ async function main() {
       // 保存用户消息
       const userMsg: Anthropic.MessageParam = { role: "user", content: trimmed };
       conversationHistory.push(userMsg);
-      saveMessage(userMsg);
+      saveSession(conversationHistory);
 
       console.log("");
       await agentLoop(conversationHistory);

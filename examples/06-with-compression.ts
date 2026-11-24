@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory, estimateTokens } from "./context";
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
@@ -32,6 +33,7 @@ function findActualString(fileContent: string, searchString: string): string | n
 
 // --- 工具 ---
 const MAX_RESULT_CHARS = 10_000; // 第 1 层：限制单个工具结果的大小
+const COMPACT_THRESHOLD_TOKENS = 8_000;
 
 function truncateResult(result: string): string {
   if (result.length <= MAX_RESULT_CHARS) return result;
@@ -174,113 +176,16 @@ function zodToJsonSchema(schema: z.ZodObject<any>): Record<string, unknown> {
   return { type: "object", properties, required };
 }
 
-// --- token 估算 ---
-function estimateTokens(messages: Anthropic.MessageParam[]): number {
-  let chars = 0;
-  for (const msg of messages) {
-    if (typeof msg.content === "string") { chars += msg.content.length; }
-    else if (Array.isArray(msg.content)) {
-      for (const block of msg.content) {
-        if ("text" in block && typeof block.text === "string") chars += block.text.length;
-        else if ("content" in block && typeof block.content === "string") chars += block.content.length;
-        else if ("input" in block) chars += JSON.stringify(block.input).length;
-      }
-    }
-  }
-  return Math.ceil(chars / 4);
-}
-
-// --- 第 2 层：清理旧的工具结果 ---
-const KEEP_RECENT_RESULTS = 6;
-
-function clearOldResults(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
-  const toolResultIndices: number[] = [];
-  messages.forEach((msg, i) => {
-    if (typeof msg.content !== "string" && Array.isArray(msg.content)) {
-      if (msg.content.some((b: any) => b.type === "tool_result")) toolResultIndices.push(i);
-    }
-  });
-
-  const toClear = new Set(toolResultIndices.slice(0, -KEEP_RECENT_RESULTS));
-
-  return messages.map((msg, i) => {
-    if (!toClear.has(i)) return msg;
-    const content = (msg.content as any[]).map((block: any) => {
-      if (block.type === "tool_result") {
-        return { ...block, content: "[Cleared to save context]" };
-      }
-      return block;
-    });
-    return { ...msg, content };
-  });
-}
-
-// --- 第 3 层：自动压缩（LLM 摘要）---
-// 为了演示效果，这里用了一个很低的阈值，好让你能看到它触发。
-// 生产环境中，这个值大约是模型上下文窗口的 80%。
-const COMPACT_THRESHOLD_TOKENS = 8_000; // 演示用的低值。生产环境：约 160,000
-
-async function autoCompact(
-  messages: Anthropic.MessageParam[],
-  tokenEstimate: number
-): Promise<{ messages: Anthropic.MessageParam[]; wasCompacted: boolean }> {
-  if (tokenEstimate < COMPACT_THRESHOLD_TOKENS) {
-    return { messages, wasCompacted: false };
-  }
-
-  console.log("  [compact] 正在摘要对话以释放上下文...");
-
-  const summaryResponse = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    system:
-      "请对这段用户与编程助手之间的对话进行摘要。" +
-      "需要保留：文件路径、已做的代码改动、当前任务，以及用户偏好。" +
-      "尽量简洁，但不要丢失重要细节。",
-    messages,
-  });
-
-  const summaryText = summaryResponse.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("\n");
-
-  // 保留最后几条消息不动
-  const keepRecent = 4;
-  const recentMessages = messages.slice(-keepRecent);
-
-  const compacted: Anthropic.MessageParam[] = [
-    {
-      role: "user",
-      content: `[对话摘要]\n${summaryText}\n\n[从这里继续。]`,
-    },
-    {
-      role: "assistant",
-      content: "明白了。我已经掌握了之前对话中的上下文。",
-    },
-    ...recentMessages,
-  ];
-
-  const savedTokens = tokenEstimate - estimateTokens(compacted);
-  console.log(`  [compact] Saved ~${savedTokens} tokens`);
-
-  return { messages: compacted, wasCompacted: true };
-}
-
 // --- 完整的压缩流水线 ---
-async function compressMessages(
-  messages: Anthropic.MessageParam[]
-): Promise<Anthropic.MessageParam[]> {
-  // 第 1 层：结果创建时就已经做过截断
-
-  // 第 2 层：清理旧的工具结果
-  let compressed = clearOldResults(messages);
-
-  // 第 3 层：如果仍然太大，就自动压缩
-  const tokenEstimate = estimateTokens(compressed);
-  const { messages: compacted, wasCompacted } = await autoCompact(compressed, tokenEstimate);
-
-  return compacted;
+// 三层处理在 context.ts 中：截断结果、清理旧结果、摘要旧对话。
+// 压缩直接写回传入的数组；后续消息继续追加到同一份工作历史。
+async function compressMessages(messages: Anthropic.MessageParam[]): Promise<void> {
+  await compressWorkingHistory(messages, {
+    model: { create: (request, options) => client.messages.create(request, options) },
+    modelName: MODEL,
+    thresholdTokens: COMPACT_THRESHOLD_TOKENS, // 演示用低值；其他示例默认约 160,000。
+    log: console.log,
+  });
 }
 
 // --- 智能体循环（带压缩）---
@@ -301,16 +206,16 @@ async function agentLoop(
     if (turns > maxTurns) return "[max turns reached]";
 
     // 每次 API 调用前先运行压缩流水线
-    const compressed = await compressMessages(conversationHistory);
-    const tokenEstimate = estimateTokens(compressed);
-    console.log(`  [context] ~${tokenEstimate} tokens in ${compressed.length} messages`);
+    await compressMessages(conversationHistory);
+    const tokenEstimate = estimateTokens(conversationHistory);
+    console.log(`  [context] ~${tokenEstimate} tokens in ${conversationHistory.length} messages`);
 
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: apiTools,
-      messages: compressed,
+      messages: conversationHistory,
     });
 
     conversationHistory.push({ role: "assistant", content: response.content });

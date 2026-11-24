@@ -1,8 +1,9 @@
 // 本示例聚焦于: 网络访问(第 11 章)。
-// 包含: 工具(第 2 章)、编辑(第 3 章)、系统提示词(第 4 章)、流式(第 9 章)、并发(第 10 章)。
-// 省略: 权限(第 7 章)、子代理(第 8 章)、压缩(第 6 章),让代码保持聚焦。
+// 包含: 工具(第 2 章)、编辑(第 3 章)、系统提示词(第 4 章)、压缩(第 6 章)、流式(第 9 章)、并发(第 10 章)。
+// 省略: 权限(第 7 章)、子代理(第 8 章),让代码保持聚焦。
 
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory } from "./context";
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
@@ -382,6 +383,11 @@ async function agentLoop(messages: Anthropic.MessageParam[]): Promise<string> {
     turns++;
     if (turns > maxTurns) return "[max turns reached]";
 
+    await compressWorkingHistory(messages, {
+      model: { create: (request, options) => client.messages.create(request, options) },
+      modelName: MODEL,
+      log: console.log,
+    });
     const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 4096,

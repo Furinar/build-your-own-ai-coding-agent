@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory } from "./context";
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
@@ -270,6 +271,11 @@ async function agentLoop(
     turns++;
     if (turns > maxTurns) return "[max turns reached]";
 
+    await compressWorkingHistory(conversationHistory, {
+      model: { create: (request, options) => client.messages.create(request, options) },
+      modelName: MODEL,
+      log: console.log,
+    });
     const tokenEstimate = estimateTokens(conversationHistory);
     console.log(`  [上下文] ~${tokenEstimate} tokens`);
 

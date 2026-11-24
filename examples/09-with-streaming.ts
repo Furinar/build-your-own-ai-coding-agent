@@ -3,6 +3,7 @@
 // 省略: 权限(第 7 章)、子代理(第 8 章),让代码专注于流式。
 
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory } from "./context";
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
@@ -171,6 +172,11 @@ async function agentLoop(
     if (turns > maxTurns) return "[max turns reached]";
 
     // 使用流式 API 而不是 create()
+    await compressWorkingHistory(messages, {
+      model: { create: (request, options) => client.messages.create(request, options) },
+      modelName: MODEL,
+      log: console.log,
+    });
     const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 4096,

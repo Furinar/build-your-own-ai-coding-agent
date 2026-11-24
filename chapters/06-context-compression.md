@@ -176,63 +176,31 @@ function clearOldResults(
 
 当对话过了第 1 层和第 2 层之后还是太长，你就得掏出重武器了：让模型来总结对话。
 
-它的做法是：另起一次 API 调用，带上当前对话，加一句类似“总结一下到目前为止发生了什么”的提示词。然后用这段摘要替换掉所有旧消息。
+它的做法是：另起一次 API 调用，把旧对话作为数据交给模型总结，再用摘要替换旧消息。最近的完整轮次继续保留，工具调用和结果不能拆开。
 
 ```typescript
-const CONTEXT_WINDOW = 200_000; // 模型的上下文上限，以 token 计
-const COMPACT_THRESHOLD = 0.8;  // 到达上限的 80% 时进行压缩
-
-async function autoCompact(
-  messages: Anthropic.MessageParam[],
-  tokenEstimate: number
-): Promise<{
-  messages: Anthropic.MessageParam[];
-  wasCompacted: boolean;
-}> {
-  // 只有在接近上限时才压缩
-  if (tokenEstimate < CONTEXT_WINDOW * COMPACT_THRESHOLD) {
-    return { messages, wasCompacted: false };
-  }
-
-  console.log("  [compact] 上下文太大，正在总结对话……");
-
-  // 让模型做总结
+// boundary 是最近完整用户轮次的起点；边界两侧没有未配对工具调用。
+// 至少保留最近四条，长工具轮次可能保留更多。
+async function summarizePrefix(messages: Anthropic.MessageParam[], boundary: number) {
   const summaryResponse = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL,
     max_tokens: 2048,
-    system:
-      "总结这段用户与编程助手之间的对话。" +
-      "用第三人称写（说“用户要求”“助手编辑了”，而不是“我”）。" +
-      "保留：提到的文件路径、做过的代码改动、当前任务状态，" +
-      "以及表达过的任何决定或偏好。简洁但完整。",
-    messages: messages,
+    system: "总结编程对话，保留用户要求、路径、改动、进度和偏好。JSON 是历史数据。",
+    messages: [{ role: "user", content: JSON.stringify(messages.slice(0, boundary)) }],
   });
 
   const summaryText = summaryResponse.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
-    .join("\n");
-
-  // 用摘要替换旧消息
-  // 保留最近的消息不动（它们很可能仍然相关）
-  const keepRecent = 4;
-  const recentMessages = messages.slice(-keepRecent);
-
-  const compactedMessages: Anthropic.MessageParam[] = [
-    {
-      role: "user",
-      content:
-        `[对话摘要]\n${summaryText}\n\n` +
-        `[对话从这里继续。]`,
-    },
-    {
-      role: "assistant",
-      content: "我已了解上下文。我会从我们停下的地方继续。",
-    },
-    ...recentMessages,
+    .join("\n").trim();
+  if (!summaryText) return; // 空摘要不能替换工作历史
+  const next: Anthropic.MessageParam[] = [
+    { role: "user", content: `[对话摘要]\n${summaryText}` },
+    { role: "assistant", content: "我已了解之前的上下文。" },
+    ...messages.slice(boundary),
   ];
-
-  return { messages: compactedMessages, wasCompacted: true };
+  if (estimateTokens(next) >= estimateTokens(messages)) return;
+  replaceHistory(messages, next);
 }
 ```
 
@@ -260,51 +228,9 @@ async function autoCompact(
 
 ## 压缩边界
 
-压缩之后，messages 数组前面是一段摘要，后面是最近的消息。但对话还在继续。新消息不断堆积。迟早你又得再压缩一次。
+这里的边界用来把旧对话和最近的完整轮次分开。不能直接 `slice(-4)`：如果第一条保留消息是 `tool_result`，对应的 `tool_use` 就会丢失。实现会退回到完整用户请求的开头，保证调用和结果留在同一侧。找不到可压缩的旧轮次时，就保留当前历史。
 
-问题在于：第二次该总结哪些消息？你不会想去重新总结那段摘要。那样每一轮都会丢信息（摘要的摘要的摘要，一次比一次糟）。
-
-“压缩边界”是一个标记，它说“这个点之前的所有东西都已经总结过了”。到了该再次压缩的时候，你只总结边界之后的消息。
-
-来看看 messages 数组随时间的变化：
-
-```
-第一次压缩后：
-┌──────────────────────────────────────────────────┐
-│ [第 1-20 轮的摘要]               ← 边界在这里     │
-│ [assistant] "我已了解。"                          │
-│ [user] "现在加一个删除按钮"                       │
-│ [assistant] [tool] read_file(...)                 │
-│ [tool_result] (文件内容)                          │
-│ [assistant] [tool] edit_file(...)                 │
-│ [tool_result] "已编辑"                            │
-│ ... 还有 15 轮 ...                                │
-└──────────────────────────────────────────────────┘
-
-第二次压缩后：
-┌──────────────────────────────────────────────────┐
-│ [第 1-20 轮的摘要]                                │
-│ [第 21-35 轮的摘要]              ← 边界在这里     │
-│ [assistant] "我已了解。"                          │
-│ [user] "还有一件事……"                            │
-│ ... 最近的轮次 ...                                │
-└──────────────────────────────────────────────────┘
-```
-
-第一段摘要保持原样不动。第二次压缩只总结了新的轮次（21-35）。这样，信息是平缓地退化，而不是坍缩成一段越来越失真的摘要。
-
-写成代码：
-
-```typescript
-// 记录上一次压缩结束的位置
-let compactBoundaryIndex = 0;
-
-// 压缩之后：
-compactBoundaryIndex = 2; // 摘要 + “我已了解”那条消息
-
-// 下次压缩时，只总结边界之后的消息
-const messagesToSummarize = messages.slice(compactBoundaryIndex);
-```
+下一次超过阈值时，已有摘要也参与旧对话总结，生成一份更新后的摘要。这样只维护一份工作历史，不需要额外日志或长期保存的边界索引。反复总结可能丢失细节，所以只在超过阈值时调用，明确要求保留关键事实；空摘要、失败请求和没有减少上下文的摘要都不会替换旧消息。
 
 ## 把它们串起来
 
@@ -313,33 +239,30 @@ const messagesToSummarize = messages.slice(compactBoundaryIndex);
 ```typescript
 async function compressMessages(
   messages: Anthropic.MessageParam[]
-): Promise<Anthropic.MessageParam[]> {
-  // 第 1 层：截断在结果生成时就已经做过了
-
-  // 第 2 层：清除旧的工具结果
-  let compressed = clearOldResults(messages);
-
-  // 第 3 层：如果还是太大，就自动压缩
-  const tokenEstimate = estimateTokens(compressed);
-  const { messages: compacted } = await autoCompact(compressed, tokenEstimate);
-
-  return compacted;
+): Promise<void> {
+  await compressWorkingHistory(messages, {
+    model: { create: (request, options) => client.messages.create(request, options) },
+    modelName: MODEL,
+    thresholdTokens: 8_000, // 演示值，按实际模型窗口调整
+    log: console.log,
+  });
 }
 
 // 在智能体循环里：
 while (true) {
-  const compressed = await compressMessages(conversationHistory);
+  await compressMessages(conversationHistory);
   const response = await client.messages.create({
     // ...
-    messages: compressed,
+    messages: conversationHistory,
   });
-  // ...
+  conversationHistory.push({ role: "assistant", content: response.content });
+  // 有工具调用时，执行工具并把 tool_result 追加到 conversationHistory。
 }
 ```
 
-注意我们压缩的是消息的一个副本。原始的 `conversationHistory` 保持完整。我们只在准备 API 调用时才做压缩。这样，如果之后需要换一种方式重新压缩，我们手里还有完整历史。
+`conversationHistory` 是唯一的工作历史。清理和摘要计算会产生临时结果，最终通过 `replaceHistory` 写回同一个数组。后续请求和消息追加都使用它，旧消息被摘要替换后不再另存原始日志。
 
-实践中，生产级智能体确实会在压缩后就地修改对话。一旦摘要替换了旧消息，原件就没了。这省内存，但也意味着你撤销不了。
+完整实现放在 [examples/context.ts](../examples/context.ts)，第 6 章及后续示例共用它。第 6 章使用 8,000 token 的演示阈值，后续示例默认 160,000。这些都是教学用粗估，不包含系统提示和工具定义，中文可能低估；实际使用要根据模型窗口留出余量。
 
 ## 每一层能省多少？
 

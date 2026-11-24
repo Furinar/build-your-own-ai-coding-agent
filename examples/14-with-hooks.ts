@@ -1,6 +1,7 @@
 // 第 14 章：给可见的 agentLoop 加上扩展点。
 // 只保留读写文件两个工具，让你能在一个文件里看清 Hook 的位置。
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory } from "./context";
 import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
@@ -28,7 +29,7 @@ export async function trigger(hooks: Map<HookEvent, Hook[]>, event: HookEvent, c
     if (typeof result === "string" && result.trim()) return result;
   }
 }
-export function createAgent(options: { cwd?: string; model?: Model; maxTurns?: number; log?: (text: string) => void } = {}) {
+export function createAgent(options: { cwd?: string; model?: Model; maxTurns?: number; contextThreshold?: number; log?: (text: string) => void } = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const MODEL = process.env.MODEL?.trim() || "trae-internal/openrouter-3o";
   let client: Anthropic | undefined;
@@ -91,6 +92,10 @@ export function createAgent(options: { cwd?: string; model?: Model; maxTurns?: n
     messages.push({ role: "user", content: query });
     for (let turn = 0; turn < (options.maxTurns ?? 20); turn++) {
       abort.signal.throwIfAborted();
+      await compressWorkingHistory(messages, {
+        model, modelName: MODEL, thresholdTokens: options.contextThreshold,
+        signal: abort.signal, log,
+      });
       const response = await model.create({
         model: MODEL, max_tokens: 4096,
         system: `你是 ${cwd} 中的编程助手，使用工具完成任务，回答用中文。`,

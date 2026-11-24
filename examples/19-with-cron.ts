@@ -1,6 +1,7 @@
 // 第 19 章：定时任务与成功确认。工具、状态和 agentLoop 都在本文件内。
 
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory } from "./context";
 import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
@@ -91,7 +92,7 @@ export class CronJobs {
 }
 
 export async function createAgent(options: {
-  cwd?: string; model?: Model; maxTurns?: number; log?: (text: string) => void;
+  cwd?: string; model?: Model; maxTurns?: number; contextThreshold?: number; log?: (text: string) => void;
   evaluator?: Model; goal?: string; maxEvaluations?: number;
 } = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
@@ -154,6 +155,10 @@ export async function createAgent(options: {
     for (let turn = 0; turn < (options.maxTurns ?? 20); turn++) {
       abort.signal.throwIfAborted();
       if (cron.notices.length) messages.push({ role: "user", content: "定时通知：" + cron.notices.splice(0).join("\n") });
+      await compressWorkingHistory(messages, {
+        model, modelName: MODEL, thresholdTokens: options.contextThreshold,
+        signal: abort.signal, log,
+      });
       const response = await model.create({
         model: MODEL, max_tokens: 4096,
         system: "你是 " + cwd + " 中的编程助手，回答用中文。cron 使用 UTC；只有 CLI 存活时自动检查。不得把已创建计划说成已执行成功。",

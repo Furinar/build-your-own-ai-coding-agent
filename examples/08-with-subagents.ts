@@ -3,6 +3,7 @@
 // 省略: 权限(第 7 章),让代码专注于子代理这个概念。
 
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory } from "./context";
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
@@ -209,6 +210,11 @@ async function agentLoop(
     turns++;
     if (turns > maxTurns) return "[max turns reached]";
 
+    await compressWorkingHistory(messages, {
+      model: { create: (request, options) => client.messages.create(request, options) },
+      modelName: MODEL,
+      log: console.log,
+    });
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 4096,

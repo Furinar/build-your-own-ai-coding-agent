@@ -36,39 +36,40 @@
 
 ## 把对话保存到磁盘
 
-保存对话最简单的格式是 JSONL（JSON Lines）。每一行是一个 JSON 对象，每来一条消息就追加一行。不需要把整个文件读出来再重写。
+会话文件保存当前工作历史的快照，包括摘要和最近的完整轮次。使用 JSONL（JSON Lines）编码，每一行是一条消息；保存时覆盖整个快照。
 
 ```typescript
 import * as fs from "fs";
 
 const SESSION_FILE = ".agent/session.jsonl";
 
-function saveMessage(message: Anthropic.MessageParam): void {
+function saveSession(messages: Anthropic.MessageParam[]): void {
   fs.mkdirSync(".agent", { recursive: true });
-  const line = JSON.stringify(message) + "\n";
-  fs.appendFileSync(SESSION_FILE, line);
+  const temporary = SESSION_FILE + ".tmp";
+  fs.writeFileSync(temporary, messages.map(message => JSON.stringify(message)).join("\n") + "\n");
+  fs.renameSync(temporary, SESSION_FILE);
 }
 ```
 
-为什么用 JSONL 而不是普通 JSON？用 JSON 的话，你得把整个文件读出来、解析、加上新消息、再写回去。用 JSONL，你只要追加一行。这更快也更安全。如果进程在写到一半时崩溃，你最多丢一行，而不会把整个文件搞坏。
+JSONL 只是编码格式，不代表追加式日志。先写临时文件，再重命名替换，避免普通写入中断留下半份快照。压缩后立即保存，下一次恢复就会得到已经压缩的工作历史。
 
-你在智能体循环里每添加一条消息就调用一次 `saveMessage`：
+在收到用户输入、压缩完成、纯文本回复完成，以及工具调用与结果成对完成时保存：
 
 ```typescript
 // 用户发送消息之后：
 conversationHistory.push({ role: "user", content: userInput });
-saveMessage({ role: "user", content: userInput });
+saveSession(conversationHistory);
 
-// 助手响应之后：
+// 纯文本助手响应之后：
 conversationHistory.push({ role: "assistant", content: response.content });
-saveMessage({ role: "assistant", content: response.content });
+saveSession(conversationHistory);
 
-// 工具结果之后：
+// 如果助手发出工具调用，等所有结果一起追加后再保存：
 conversationHistory.push({ role: "user", content: toolResults });
-saveMessage({ role: "user", content: toolResults });
+saveSession(conversationHistory);
 ```
 
-每条消息都是即时保存的，不是等会话结束才存。
+保存包含工具调用的助手消息时，要同时保存它的结果，避免恢复出没有配对结果的调用。项目记忆 `memory.md` 仍是独立的长期偏好笔记，不承担原始对话日志的作用。
 
 ## 加载并恢复
 
@@ -98,7 +99,7 @@ rl.question("> ", async (userInput) => {
     if (loaded.length === 0) {
       console.log("没有找到之前的会话。");
     } else {
-      conversationHistory.push(...loaded);
+      replaceHistory(conversationHistory, loaded);
       console.log(`已从上次会话加载 ${loaded.length} 条消息。`);
     }
     return ask(); // 回到提示符，不送给智能体
@@ -113,7 +114,7 @@ rl.question("> ", async (userInput) => {
 
   // 普通输入：保存并送给智能体
   conversationHistory.push({ role: "user", content: userInput });
-  saveMessage({ role: "user", content: userInput });
+  saveSession(conversationHistory);
   const response = await agentLoop(conversationHistory);
   // ...
 });
@@ -121,7 +122,7 @@ rl.question("> ", async (userInput) => {
 
 `/resume` 和 `/new` 命令在输入到达智能体之前就被拦截。它们不是工具调用，而是直接修改对话历史的 REPL 命令。
 
-执行 `/resume` 之后，模型在下一轮就能看到之前的整段对话。它可以引用读过的文件、做过的编辑，以及上次会话里的决定。
+`replaceHistory` 来自 [examples/context.ts](../examples/context.ts)，它替换同一个数组里的内容。重复执行 `/resume` 不会把消息追加两遍。模型下一轮看到的是保存的工作历史快照：如果已经压缩，就继续使用摘要和最近轮次。
 
 ### 展示历史会话
 

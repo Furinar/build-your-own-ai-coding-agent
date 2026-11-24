@@ -1,6 +1,7 @@
 // 第 24 章：把能力接回同一个循环。工具、状态和 agentLoop 都在本文件内。
 
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory } from "./context";
 import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
@@ -474,7 +475,7 @@ type HookEvent = "PreToolUse" | "PostToolUse" | "Stop";
 type Hook = (context: { name?: string; input?: unknown; output?: string }) => string | void | Promise<string | void>;
 
 export async function createAgent(options: {
-  cwd?: string; model?: Model; maxTurns?: number; log?: (text: string) => void;
+  cwd?: string; model?: Model; maxTurns?: number; contextThreshold?: number; log?: (text: string) => void;
   evaluator?: Model; goal?: string; maxEvaluations?: number;
 } = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
@@ -633,6 +634,10 @@ messages.push({ role: "user", content: "可用 Skills（需要时再加载全文
       abort.signal.throwIfAborted();
       const notices = background.drain(); if (notices.length) messages.push({ role: "user", content: "后台通知：" + notices.join("\n") });
 if (cron.notices.length) messages.push({ role: "user", content: "定时通知：" + cron.notices.splice(0).join("\n") });
+      await compressWorkingHistory(messages, {
+        model, modelName: MODEL, thresholdTokens: options.contextThreshold,
+        signal: abort.signal, log,
+      });
       const response = await model.create({
         model: MODEL, max_tokens: 4096,
         system: "你是 " + cwd + " 中的编程助手，回答用中文。复杂工作先列待办；长命令后台执行并等待实际结果；完成后读回核对。Skills 按需加载。团队消息不自动启动其他 Agent。工作流支持 read/write/assert_file。所有任务都由独立请求验收。",

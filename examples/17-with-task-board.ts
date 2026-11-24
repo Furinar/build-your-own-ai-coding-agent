@@ -1,6 +1,7 @@
 // 第 17 章：持久任务与依赖图。工具、状态和 agentLoop 都在本文件内。
 
 import Anthropic from "@anthropic-ai/sdk";
+import { compressWorkingHistory } from "./context";
 import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
@@ -79,7 +80,7 @@ export class TaskBoard {
 }
 
 export async function createAgent(options: {
-  cwd?: string; model?: Model; maxTurns?: number; log?: (text: string) => void;
+  cwd?: string; model?: Model; maxTurns?: number; contextThreshold?: number; log?: (text: string) => void;
   evaluator?: Model; goal?: string; maxEvaluations?: number;
 } = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
@@ -137,6 +138,10 @@ export async function createAgent(options: {
     for (let turn = 0; turn < (options.maxTurns ?? 20); turn++) {
       abort.signal.throwIfAborted();
       
+      await compressWorkingHistory(messages, {
+        model, modelName: MODEL, thresholdTokens: options.contextThreshold,
+        signal: abort.signal, log,
+      });
       const response = await model.create({
         model: MODEL, max_tokens: 4096,
         system: "你是 " + cwd + " 中的编程助手，回答用中文。执行持久任务前先领取，完成实际工作后用返回的 version 更新状态。",
